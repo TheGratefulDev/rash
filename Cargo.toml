@@ -1,0 +1,11 @@
+[package]
+name = "rash"
+version = "0.1.0"
+edition = "2021"
+authors = ["Luke Elliot <lukejelliot25@gmail.com>"]
+
+[lib]
+path = "src/rash.rs"
+
+[dependencies]
+libc = "0.2.139"
