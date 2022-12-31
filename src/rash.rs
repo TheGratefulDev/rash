@@ -95,6 +95,7 @@ mod tests {
             "ls -l | cat -",
             "ls | cat $(echo '-')",
             "[[ 5 -eq $((3 + 2)) ]]",
+            "exit 0"
         ]
             .iter()
             .for_each(|c| {
@@ -106,7 +107,9 @@ mod tests {
     #[test]
     fn test_various_commands_that_should_fail() {
         [
-            "i_am_not_a_valid_executable -f"
+            "i_am_not_a_valid_executable",
+            "ls | grep blahblahblah",
+            "exit 1;"
         ]
             .iter()
             .for_each(|c| {
