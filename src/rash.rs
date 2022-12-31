@@ -117,4 +117,18 @@ mod tests {
                 assert_ne!(o.return_value, 0);
             });
     }
+
+    #[test]
+    fn test_stdout() {
+        [
+            ("", ""),
+            ("echo hi", "hi\n"),
+            ("echo hi >/dev/null", ""),
+        ]
+            .iter()
+            .for_each(|c| {
+                let o = command(c.0);
+                assert_eq!(o.stdout, c.1);
+            });
+    }
 }
