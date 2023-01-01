@@ -89,6 +89,7 @@ mod tests {
             "ls -l | cat -",
             "ls | cat $(echo '-')",
             "[[ 5 -eq $((3 + 2)) ]]",
+            "/bin/sh -c \"echo hi\"",
             "exit 0"
         ]
             .iter()
