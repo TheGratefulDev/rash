@@ -16,7 +16,7 @@ lazy_static! {
 pub type Out = (i32, String);
 
 pub fn command<S: AsRef<str>>(cmd: S) -> Out {
-    let (f, exit_status) = unsafe {
+    let (mut f, exit_status) = unsafe {
         let stream = popen(
             into_c_string(into_bash_command(cmd)).as_ptr(),
             READ_MODE.as_ptr(),
@@ -35,8 +35,6 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
         (File::from_raw_fd(fd), exit_status)
     };
 
-    let stdout = read_file_into_string(f);
-
     let ret_val: i32;
     if WIFEXITED(exit_status) {
         ret_val = WEXITSTATUS(exit_status);
@@ -44,7 +42,15 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
         return error("WIFEXITED was false. The call to popen didn't exit normally.");
     }
 
-    (ret_val, stdout)
+    let mut buffer = Vec::new();
+    if let Err(e) = f.read_to_end(&mut buffer) {
+        return error(e.to_string())
+    }
+
+    return match str::from_utf8(&buffer) {
+        Ok(s) => (ret_val, s.to_string()),
+        Err(e) => error(e.to_string())
+    }
 }
 
 fn into_c_string<S: AsRef<str>>(s: S) -> CString {
@@ -70,12 +76,6 @@ fn error<S: AsRef<str>>(description: S) -> Out {
             strerror output: {}.", errno.to_string(), description.as_ref(), strerror);
 
     (errno, out)
-}
-
-fn read_file_into_string(mut f: File) -> String {
-    let mut buffer = Vec::new();
-    f.read_to_end(&mut buffer).expect("Couldn't read file into buffer.");
-    str::from_utf8(&buffer).expect("The buffer wasn't valid utf-8.").to_string()
 }
 
 #[cfg(test)]
