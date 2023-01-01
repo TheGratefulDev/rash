@@ -102,7 +102,7 @@ mod tests {
     fn test_various_commands_that_should_fail() {
         [
             "i_am_not_a_valid_executable",
-            "ls | grep \"you will never get me lalalalaa\"",
+            "echo hi | grep \"you will never get me lalalalaa\"",
             "exit 1;"
         ]
             .iter()
