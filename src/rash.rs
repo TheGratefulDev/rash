@@ -59,7 +59,7 @@ fn into_c_string<S: AsRef<str>>(s: S) -> CString {
 }
 
 fn into_bash_command<S: AsRef<str>>(s: S) -> String {
-    format!("/bin/bash -c \"{}\"", s.as_ref())
+    format!("/bin/bash -c '{}'", s.as_ref())
 }
 
 fn error<S: AsRef<str>>(description: S) -> Out {
@@ -83,33 +83,33 @@ mod tests {
     use super::command;
 
     #[test]
-    fn test_various_commands_return_zero() {
+    fn test_commands_return_zero() {
         [
             "ls",
             "ls -l | cat -",
             "ls | cat $(echo '-')",
             "[[ 5 -eq $((3 + 2)) ]]",
-            "/bin/sh -c \"echo hi\"",
+            "/bin/sh -c 'echo hi'",
             "exit 0"
         ]
             .iter()
             .for_each(|c| {
-                let (ret_val, _) = command(c);
-                assert_eq!(ret_val, 0);
+                let (r, _) = command(c);
+                assert_eq!(r, 0);
             });
     }
 
     #[test]
-    fn test_various_commands_that_should_fail() {
+    fn test_commands_return_non_zero() {
         [
-            "i_am_not_a_valid_executable",
-            "echo hi | grep \"you will never get me lalalalaa\"",
-            "exit 1;"
+            ("i_am_not_a_valid_executable", 127),
+            ("echo hi | grep 'you will never get me lalalalaa'", 1),
+            ("exit 54;", 54)
         ]
             .iter()
-            .for_each(|c| {
-                let (ret_val, _) = command(c);
-                assert_ne!(ret_val, 0);
+            .for_each(move |(cmd, ret)| {
+                let (r, _) = command(cmd);
+                assert_eq!(r, *ret);
             });
     }
 
@@ -123,8 +123,23 @@ mod tests {
         ]
             .iter()
             .for_each(move |(cmd, out)| {
-                let (_, stdout) = command(cmd);
-                assert_eq!(stdout, *out);
+                let (_, s) = command(cmd);
+                assert_eq!(s, *out);
             });
     }
+
+    #[test]
+    fn test_script() {
+        let (r, s) = command(PRETTY_TRIANGLE_SCRIPT);
+        assert_eq!(r, 0);
+        assert_eq!(s, String::from("*\n* *\n* * *\n"))
+    }
+
+    const PRETTY_TRIANGLE_SCRIPT: &str = r#"
+    s="*"
+    for i in {1..3}; do
+        echo "$s"
+        s="$s *"
+    done;
+    "#;
 }
