@@ -14,14 +14,12 @@ macro_rules! rash {
 
 /// rash! failure cases.
 ///
-/// # Examples
-///
-/// ## Passing a non-String or string literal as an argument.
+/// # Passing a non-String or string literal as an argument.
 /// ```compile_fail
 /// rash!(35345);          // the trait `AsRef<str>` is not implemented for `{integer}`
 /// ```
 ///
-/// ## Passing 0 or more than 1 argument.
+/// # Passing 0 or more than 1 argument.
 /// ```compile_fail
 /// rash!();               // "Expected only one argument to rash, received 0."
 /// rash!("blah", "blah"); // "Expected only one argument to rash, received 2."
