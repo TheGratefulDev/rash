@@ -55,7 +55,9 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
     };
 }
 
-fn into_bash_command<S: AsRef<str>>(s: S) -> String { format!("/bin/bash -c '{}'", s.as_ref()) }
+fn into_bash_command<S: AsRef<str>>(s: S) -> String {
+    format!("/usr/bin/env bash -c '{}'", s.as_ref())
+}
 
 fn error<S: AsRef<str>>(description: S) -> Out {
     let (errno, strerror) = unsafe {
@@ -75,6 +77,8 @@ fn error<S: AsRef<str>>(description: S) -> Out {
 
 #[cfg(test)]
 mod tests {
+    use crate::shell::into_bash_command;
+
     use super::{command, error};
 
     #[test]
@@ -148,4 +152,9 @@ mod tests {
         Description: my description.\n\
         strerror output: Success.\n\
     ";
+
+    #[test]
+    fn test_into_bash_command() {
+        assert_eq!(into_bash_command("blah"), "/usr/bin/env bash -c 'blah'".to_string());
+    }
 }
