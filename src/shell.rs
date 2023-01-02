@@ -18,18 +18,18 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
     let (mut f, exit_status) = unsafe {
         let cmd_as_c_string = match CString::new(into_bash_command(cmd)) {
             Ok(c) => c,
-            Err(e) => return (-1, e.to_string()),
+            Err(e) => return (-1, format_null_byte_error(e.to_string())),
         };
 
         let stream = popen(cmd_as_c_string.as_ptr(), READ_MODE.as_ptr());
         if stream.is_null() {
-            return kernel_error("popen returned null.");
+            return kernel_error("The call to popen returned a null stream.");
         }
 
         let fd = dup(fileno(stream));
         if fd == -1 {
             pclose(stream);
-            return kernel_error("dup returned -1.");
+            return kernel_error("The call to dup returned -1.");
         }
 
         let exit_status = pclose(stream);
@@ -45,12 +45,12 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
 
     let mut buffer = Vec::new();
     if let Err(e) = f.read_to_end(&mut buffer) {
-        return (ret_val, stdout_error(e.to_string()));
+        return (ret_val, format_stdout_error(e.to_string()));
     }
 
     return match str::from_utf8(&buffer) {
         Ok(s) => (ret_val, s.to_string()),
-        Err(e) => (ret_val, stdout_error(e.to_string())),
+        Err(e) => (ret_val, format_stdout_error(e.to_string())),
     };
 }
 
@@ -82,19 +82,31 @@ fn kernel_error<S: AsRef<str>>(description: S) -> Out {
     (errno, error_message)
 }
 
-fn stdout_error(error_message: String) -> String {
+fn format_stdout_error(error_message: String) -> String {
     format!(
         "\n\
         ERROR: Couldn't obtain stdout.\n\
         Error message: {}\n\
         ",
-        error_message.to_string()
+        error_message
+    )
+}
+
+fn format_null_byte_error(error_message: String) -> String {
+    format!(
+        "\n\
+        ERROR: Command contained a null byte.\n\
+        Error message: {}\n\
+        ",
+        error_message
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{command, kernel_error, into_bash_command, stdout_error};
+    use super::{
+        command, format_null_byte_error, format_stdout_error, into_bash_command, kernel_error,
+    };
 
     #[test]
     fn test_commands_return_zero() {
@@ -124,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stdout() {
+    fn test_commands_stdout() {
         [
             ("", ""),
             ("echo hi", "hi\n"),
@@ -136,6 +148,22 @@ mod tests {
             let (_, s) = command(c);
             assert_eq!(s, *out);
         });
+    }
+
+    #[test]
+    fn test_command_with_null_byte() {
+        let bytes_with_zero: Vec<u8> = [5, 6, 7, 8, 0, 10, 11, 12].to_vec();
+        let command_with_null_byte =
+            unsafe { std::str::from_utf8_unchecked(&*bytes_with_zero) }.to_string();
+        assert_eq!(
+            command(command_with_null_byte),
+            (
+                -1,
+                format_null_byte_error(
+                    "nul byte found in provided data at position: 26".to_string()
+                )
+            )
+        )
     }
 
     #[test]
@@ -154,9 +182,9 @@ mod tests {
         "#;
 
     #[test]
-    fn test_stdout_error() {
+    fn test_format_stdout_error() {
         assert_eq!(
-            stdout_error("my error message".to_string()),
+            format_stdout_error("my error message".to_string()),
             EXPECTED_STDOUT_ERROR_MESSAGE.to_string()
         );
     }
@@ -166,6 +194,18 @@ mod tests {
         Error message: my error message\n\
     ";
 
+    #[test]
+    fn test_format_null_byte_error() {
+        assert_eq!(
+            format_null_byte_error("my error message".to_string()),
+            EXPECTED_NULL_BYTE_ERROR_MESSAGE.to_string()
+        );
+    }
+
+    const EXPECTED_NULL_BYTE_ERROR_MESSAGE: &str = "\n\
+        ERROR: Command contained a null byte.\n\
+        Error message: my error message\n\
+    ";
 
     #[test]
     fn test_kernel_error_with_no_error() {
