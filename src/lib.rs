@@ -5,11 +5,11 @@ pub mod shell;
 
 #[macro_export]
 macro_rules! rash {
-    () => (compile_error!("Expected only one argument to rash, received 0."));
+    () => (compile_error!("Expected only 1 argument to rash, received 0."));
     ($arg:tt) => {
         $crate::shell::command(($arg))
     };
-    ($($arg:tt)*) => (compile_error!("Expected only one argument to rash, received more than 1."));
+    ($($arg:tt)*) => (compile_error!("Expected only 1 argument to rash, received more than 1."));
 }
 
 /// rash! failure cases.
@@ -21,8 +21,8 @@ macro_rules! rash {
 ///
 /// # Passing 0 or more than 1 argument.
 /// ```compile_fail
-/// rash!();               // "Expected only one argument to rash, received 0."
-/// rash!("blah", "blah"); // "Expected only one argument to rash, received 2."
+/// rash!();               // "Expected only 1 argument to rash, received 0."
+/// rash!("blah", "blah"); // "Expected only 1 argument to rash, received more than 1."
 /// ```
 #[cfg(test)]
 mod test {
