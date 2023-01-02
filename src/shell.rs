@@ -67,17 +67,15 @@ fn error<S: AsRef<str>>(description: S) -> Out {
         }
     };
 
-    let out = format!(
-        "ERROR: received error code {}.\
-            Description: {}.\
-            strerror output: {}.", errno.to_string(), description.as_ref(), strerror);
+    let error_message = format!(
+        "\nERROR: received error code {}.\nDescription: {}.\nstrerror output: {}.\n", errno.to_string(), description.as_ref(), strerror);
 
-    (errno, out)
+    (errno, error_message)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::command;
+    use super::{command, error};
 
     #[test]
     fn test_commands_return_zero() {
@@ -139,4 +137,15 @@ mod tests {
             s="$s *"
         done;
         "#;
+
+    #[test]
+    fn test_error_with_no_error() {
+        assert_eq!(error("my description"), (0, EXPECTED_ERROR_MESSAGE_WHEN_NO_ERROR.to_string()));
+    }
+
+    const EXPECTED_ERROR_MESSAGE_WHEN_NO_ERROR: &str = "\n\
+        ERROR: received error code 0.\n\
+        Description: my description.\n\
+        strerror output: Success.\n\
+    ";
 }
