@@ -64,10 +64,12 @@ fn into_bash_command<S: AsRef<str>>(s: S) -> String {
 
 fn error<S: AsRef<str>>(description: S) -> Out {
     let (errno, strerror) = unsafe {
-        let e = *libc::__errno_location();
-        let ptr = libc::strerror(e);
-        let s = CStr::from_ptr(ptr).to_str().expect("strerror didn't return valid utf-8.").to_string();
-        (e, s)
+        let errno = *libc::__errno_location();
+        let ptr = libc::strerror(errno);
+        match CStr::from_ptr(ptr).to_str() {
+            Ok(s) => (errno, s.to_string()),
+            Err(err) => (errno, err.to_string())
+        }
     };
 
     let out = format!(
