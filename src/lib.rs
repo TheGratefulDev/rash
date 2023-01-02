@@ -30,17 +30,12 @@ mod test {
 
     #[test]
     fn test_rash() {
-        let (ret, stdout) = rash!("echo -n hi");
-        assert_eq!(ret, 0);
-        assert_eq!(stdout, "hi");
+        let command = String::from("echo -n hi");
+        let expected = (0, "hi".to_string());
 
-        let (ret, stdout) = rash!(COMMAND);
-        assert_eq!(ret, 0);
-        assert_eq!(stdout, "hi");
+        assert_eq!(rash!(command), expected);
+        assert_eq!(rash!("echo -n hi"), expected);
+        assert_eq!(rash!(COMMAND), expected);
 
-        let cmd = String::from("echo -n hi");
-        let (ret, stdout) = rash!(cmd);
-        assert_eq!(ret, 0);
-        assert_eq!(stdout, "hi");
     }
 }

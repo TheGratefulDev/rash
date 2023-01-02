@@ -7,15 +7,20 @@ use std::str;
 use libc::{dup, fileno, pclose, popen, WEXITSTATUS, WIFEXITED};
 
 lazy_static! {
-    static ref READ_MODE: CString = into_c_string(String::from("r"));
+    static ref READ_MODE: CString = CString::new("r").unwrap();
 }
 
 pub type Out = (i32, String);
 
 pub fn command<S: AsRef<str>>(cmd: S) -> Out {
     let (mut f, exit_status) = unsafe {
+        let cmd_as_c_string = match CString::new(into_bash_command(cmd)) {
+            Ok(c) => c,
+            Err(e) => return (-1, e.to_string())
+        };
+
         let stream = popen(
-            into_c_string(into_bash_command(cmd)).as_ptr(),
+            cmd_as_c_string.as_ptr(),
             READ_MODE.as_ptr(),
         );
         if stream.is_null() {
@@ -50,14 +55,7 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
     };
 }
 
-fn into_c_string<S: AsRef<str>>(s: S) -> CString {
-    let str = s.as_ref();
-    CString::new(str).expect(format!("Couldn't convert {} into CString.", str).as_ref())
-}
-
-fn into_bash_command<S: AsRef<str>>(s: S) -> String {
-    format!("/bin/bash -c '{}'", s.as_ref())
-}
+fn into_bash_command<S: AsRef<str>>(s: S) -> String { format!("/bin/bash -c '{}'", s.as_ref()) }
 
 fn error<S: AsRef<str>>(description: S) -> Out {
     let (errno, strerror) = unsafe {
@@ -106,8 +104,8 @@ mod tests {
             ("exit 54;", 54)
         ]
             .iter()
-            .for_each(move |(cmd, ret)| {
-                let (r, _) = command(cmd);
+            .for_each(move |(c, ret)| {
+                let (r, _) = command(c);
                 assert_eq!(r, *ret);
             });
     }
@@ -121,8 +119,8 @@ mod tests {
             ("echo -n $((3 + 2 - 1))", "4")
         ]
             .iter()
-            .for_each(move |(cmd, out)| {
-                let (_, s) = command(cmd);
+            .for_each(move |(c, out)| {
+                let (_, s) = command(c);
                 assert_eq!(s, *out);
             });
     }
