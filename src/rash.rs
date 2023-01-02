@@ -105,7 +105,7 @@ mod tests {
     fn test_commands_return_non_zero() {
         [
             ("i_am_not_a_valid_executable", 127),
-            ("echo hi | grep 'you will never get me lalalalaa'", 1),
+            ("echo hi | grep 'bye'", 1),
             ("exit 54;", 54)
         ]
             .iter()
