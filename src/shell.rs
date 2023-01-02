@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
-
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io::Read;
@@ -44,13 +41,13 @@ pub fn command<S: AsRef<str>>(cmd: S) -> Out {
 
     let mut buffer = Vec::new();
     if let Err(e) = f.read_to_end(&mut buffer) {
-        return error(e.to_string())
+        return error(e.to_string());
     }
 
     return match str::from_utf8(&buffer) {
         Ok(s) => (ret_val, s.to_string()),
         Err(e) => error(e.to_string())
-    }
+    };
 }
 
 fn into_c_string<S: AsRef<str>>(s: S) -> CString {
@@ -138,10 +135,10 @@ mod tests {
     }
 
     const PRETTY_TRIANGLE_SCRIPT: &str = r#"
-    s="*"
-    for i in {1..3}; do
-        echo "$s"
-        s="$s *"
-    done;
-    "#;
+        s="*"
+        for i in {1..3}; do
+            echo "$s"
+            s="$s *"
+        done;
+        "#;
 }
