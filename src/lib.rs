@@ -37,8 +37,8 @@ mod test {
         let command = String::from("echo -n hi");
         let expected = (0, "hi".to_string());
 
-        assert_eq!(rash!(command), expected);
-        assert_eq!(rash!("echo -n hi"), expected);
-        assert_eq!(rash!(COMMAND), expected);
+        assert_eq!(rash!(command).unwrap(), expected);
+        assert_eq!(rash!("echo -n hi").unwrap(), expected);
+        assert_eq!(rash!(COMMAND).unwrap(), expected);
     }
 }
