@@ -6,7 +6,7 @@ use std::{
     str,
 };
 
-use libc::{__errno_location, strerror, WEXITSTATUS, WIFEXITED};
+use libc::{WEXITSTATUS, WIFEXITED};
 use thiserror::Error;
 
 use crate::wrapper::{LibCWrapper, LibCWrapperImpl};
@@ -28,10 +28,14 @@ pub enum RashError {
 }
 
 impl RashError {
-    fn format_kernel_error_message<S: AsRef<str>>(description: S) -> String {
+    fn format_kernel_error_message<D, S>(delegate: &D, description: S) -> String
+    where
+        D: LibCWrapper,
+        S: AsRef<str>,
+    {
         let (errno, strerror) = unsafe {
-            let errno = *__errno_location();
-            let ptr = strerror(errno);
+            let errno = *delegate.__errno_location();
+            let ptr = delegate.strerror(errno);
             match CStr::from_ptr(ptr).to_str() {
                 Ok(s) => (errno, s.to_string()),
                 Err(err) => (errno, err.to_string()),
@@ -72,7 +76,7 @@ where
         (fs::File::from_raw_fd(fd), exit_status)
     };
 
-    let return_code = get_process_return_code(exit_status)?;
+    let return_code = get_process_return_code(exit_status, delegate)?;
 
     return match str::from_utf8(&read_stream_into_buffer(stream)?) {
         Ok(s) => Ok((return_code, s.to_string())),
@@ -100,6 +104,7 @@ where
     if stream.is_null() {
         return Err(RashError::KernelError {
             message: RashError::format_kernel_error_message(
+                delegate,
                 "The call to popen returned a null stream.",
             ),
         });
@@ -107,27 +112,39 @@ where
     Ok(stream)
 }
 
-unsafe fn dup_fd_checked<D>(stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
+fn dup_fd_checked<D>(stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
 where
     D: LibCWrapper,
 {
-    let fd = delegate.dup(delegate.fileno(stream));
-    if fd == -1 {
-        delegate.pclose(stream);
-        return Err(RashError::KernelError {
-            message: RashError::format_kernel_error_message("The call to dup returned -1."),
-        });
-    }
-    Ok(fd)
+    Ok(unsafe {
+        let fd = delegate.dup(delegate.fileno(stream));
+        if fd == -1 {
+            delegate.pclose(stream);
+            return Err(RashError::KernelError {
+                message: RashError::format_kernel_error_message(
+                    delegate,
+                    "The call to dup returned -1.",
+                ),
+            });
+        }
+        fd
+    })
 }
 
-fn get_process_return_code(process_exit_status: libc::c_int) -> Result<i32, RashError> {
+fn get_process_return_code<D>(
+    process_exit_status: libc::c_int,
+    delegate: &D,
+) -> Result<i32, RashError>
+where
+    D: LibCWrapper,
+{
     if WIFEXITED(process_exit_status) {
         return Ok(WEXITSTATUS(process_exit_status));
     }
 
     Err(RashError::KernelError {
         message: RashError::format_kernel_error_message(
+            delegate,
             "WIFEXITED was false. The call to popen didn't exit normally.",
         ),
     })
