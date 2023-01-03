@@ -1,17 +1,15 @@
 use std::{
     ffi::{CStr, CString},
-    fs::File,
+    fs,
     io::Read,
     os::unix::io::FromRawFd,
     str,
 };
 
-use libc::{dup, fileno, pclose, popen, WEXITSTATUS, WIFEXITED};
+use libc::{__errno_location, strerror, WEXITSTATUS, WIFEXITED};
 use thiserror::Error;
 
-lazy_static! {
-    static ref READ_MODE: CString = CString::new("r").unwrap();
-}
+use crate::wrapper::{LibCWrapper, LibCWrapperImpl};
 
 #[derive(Error, Debug)]
 pub enum RashError {
@@ -32,8 +30,8 @@ pub enum RashError {
 impl RashError {
     fn format_kernel_error_message<S: AsRef<str>>(description: S) -> String {
         let (errno, strerror) = unsafe {
-            let errno = *libc::__errno_location();
-            let ptr = libc::strerror(errno);
+            let errno = *__errno_location();
+            let ptr = strerror(errno);
             match CStr::from_ptr(ptr).to_str() {
                 Ok(s) => (errno, s.to_string()),
                 Err(err) => (errno, err.to_string()),
@@ -49,68 +47,102 @@ impl RashError {
     }
 }
 
+lazy_static! {
+    static ref READ_MODE: CString = CString::new("r").unwrap();
+}
+
 pub type Out = (i32, String);
 
-pub fn command<S: AsRef<str>>(cmd: S) -> Result<Out, RashError> {
-    let (mut f, exit_status) = unsafe {
-        let cmd_as_c_string = match CString::new(into_bash_command(cmd)) {
-            Ok(c) => c,
-            Err(e) => {
-                return Err(RashError::NullByteInCommand {
-                    message: e.to_string(),
-                })
-            }
-        };
+pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
+    let ref delegate = LibCWrapperImpl::new();
+    _command(c, delegate)
+}
 
-        let stream = popen(cmd_as_c_string.as_ptr(), READ_MODE.as_ptr());
-        if stream.is_null() {
-            return Err(RashError::KernelError {
-                message: RashError::format_kernel_error_message(
-                    "The call to popen returned a null stream.",
-                ),
-            });
-        }
+fn _command<S, D>(command: S, delegate: &D) -> Result<Out, RashError>
+where
+    S: AsRef<str>,
+    D: LibCWrapper,
+{
+    let (stream, exit_status) = unsafe {
+        let command_as_c_string = format_command_as_c_string(command)?;
 
-        let fd = dup(fileno(stream));
-        if fd == -1 {
-            pclose(stream);
-            return Err(RashError::KernelError {
-                message: RashError::format_kernel_error_message("The call to dup returned -1."),
-            });
-        }
+        let c_stream = popen_checked(command_as_c_string, delegate)?;
 
-        let exit_status = pclose(stream);
-        (File::from_raw_fd(fd), exit_status)
+        let fd = dup_fd_checked(c_stream, delegate)?;
+
+        let exit_status = delegate.pclose(c_stream);
+        (fs::File::from_raw_fd(fd), exit_status)
     };
 
-    let ret_val: i32;
-    if WIFEXITED(exit_status) {
-        ret_val = WEXITSTATUS(exit_status);
-    } else {
-        return Err(RashError::KernelError {
-            message: RashError::format_kernel_error_message(
-                "WIFEXITED was false. The call to popen didn't exit normally.",
-            ),
-        });
-    }
+    let return_code = get_process_return_code(exit_status)?;
 
-    let mut buffer = Vec::new();
-    if let Err(e) = f.read_to_end(&mut buffer) {
-        return Err(RashError::FailedToReadStdout {
-            message: e.to_string(),
-        });
-    }
-
-    return match str::from_utf8(&buffer) {
-        Ok(s) => Ok((ret_val, s.to_string())),
+    return match str::from_utf8(&read_stream_into_buffer(stream)?) {
+        Ok(s) => Ok((return_code, s.to_string())),
         Err(e) => Err(RashError::FailedToReadStdout {
             message: e.to_string(),
         }),
     };
 }
 
+fn format_command_as_c_string<S: AsRef<str>>(cmd: S) -> Result<CString, RashError> {
+    return CString::new(into_bash_command(cmd)).map_err(|e| RashError::NullByteInCommand {
+        message: e.to_string(),
+    });
+}
+
 fn into_bash_command<S: AsRef<str>>(s: S) -> String {
     format!("/usr/bin/env bash -c '{}'", s.as_ref())
+}
+
+unsafe fn popen_checked<D>(command: CString, delegate: &D) -> Result<*mut libc::FILE, RashError>
+where
+    D: LibCWrapper,
+{
+    let stream = delegate.popen(command.as_ptr());
+    if stream.is_null() {
+        return Err(RashError::KernelError {
+            message: RashError::format_kernel_error_message(
+                "The call to popen returned a null stream.",
+            ),
+        });
+    }
+    Ok(stream)
+}
+
+unsafe fn dup_fd_checked<D>(stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
+where
+    D: LibCWrapper,
+{
+    let fd = delegate.dup(delegate.fileno(stream));
+    if fd == -1 {
+        delegate.pclose(stream);
+        return Err(RashError::KernelError {
+            message: RashError::format_kernel_error_message("The call to dup returned -1."),
+        });
+    }
+    Ok(fd)
+}
+
+fn get_process_return_code(process_exit_status: libc::c_int) -> Result<i32, RashError> {
+    if WIFEXITED(process_exit_status) {
+        return Ok(WEXITSTATUS(process_exit_status));
+    }
+
+    Err(RashError::KernelError {
+        message: RashError::format_kernel_error_message(
+            "WIFEXITED was false. The call to popen didn't exit normally.",
+        ),
+    })
+}
+
+fn read_stream_into_buffer(mut stream: fs::File) -> Result<Vec<u8>, RashError> {
+    let mut buffer = Vec::new();
+    match stream.read_to_end(&mut buffer) {
+        Ok(_) => Ok(buffer),
+        Err(e) => Err(RashError::FailedToReadStdout {
+            message: e.to_string(),
+        }),
+    }
 }
 
 #[cfg(test)]

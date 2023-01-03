@@ -2,6 +2,7 @@
 extern crate lazy_static;
 
 pub mod shell;
+pub mod wrapper;
 
 #[macro_export]
 macro_rules! rash {
