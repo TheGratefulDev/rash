@@ -63,13 +63,11 @@ where
     S: AsRef<str>,
     D: LibCWrapper,
 {
+    let command_as_c_string = format_command_as_c_string(command)?;
+
     let (stream, exit_status) = unsafe {
-        let command_as_c_string = format_command_as_c_string(command)?;
-
         let c_stream = popen_checked(command_as_c_string, delegate)?;
-
         let fd = dup_fd_checked(c_stream, delegate)?;
-
         let exit_status = delegate.pclose(c_stream);
         (fs::File::from_raw_fd(fd), exit_status)
     };
