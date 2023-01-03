@@ -72,7 +72,7 @@ where
     let (stream, exit_status) = unsafe {
         let c_stream = popen_checked(command_as_c_string, delegate)?;
         let fd = dup_fd_checked(c_stream, delegate)?;
-        let exit_status = delegate.pclose(c_stream);
+        let exit_status = pclose_checked(c_stream, delegate)?;
         (fs::File::from_raw_fd(fd), exit_status)
     };
 
@@ -128,6 +128,24 @@ where
             });
         }
         fd
+    })
+}
+
+fn pclose_checked<D>(c_stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
+where
+    D: LibCWrapper,
+{
+    Ok(unsafe {
+        let exit_status = delegate.pclose(c_stream);
+        if exit_status == -1 {
+            return Err(RashError::KernelError {
+                message: RashError::format_kernel_error_message(
+                    delegate,
+                    "The call to pclose returned -1.",
+                ),
+            });
+        }
+        exit_status
     })
 }
 
