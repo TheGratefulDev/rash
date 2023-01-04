@@ -1,5 +1,6 @@
-use libc::{c_char, c_int, FILE};
 use std::ffi::CString;
+
+use libc::{c_char, c_int, FILE};
 
 lazy_static! {
     static ref READ_MODE: CString = CString::new("r").unwrap();

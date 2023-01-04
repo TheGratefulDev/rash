@@ -1,9 +1,12 @@
 #[macro_use]
 extern crate lazy_static;
 
+mod error;
 pub mod shell;
+mod utils;
 pub mod wrapper;
 
+#[cfg(unix)]
 #[macro_export]
 macro_rules! rash {
     () => {
