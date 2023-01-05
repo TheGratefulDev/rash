@@ -1,5 +1,7 @@
 use std::ffi::CString;
 
+use libc::{WEXITSTATUS, WIFEXITED};
+
 use crate::{error::RashError, wrapper::LibCWrapper};
 
 pub(crate) unsafe fn popen<D>(command: CString, delegate: &D) -> Result<*mut libc::FILE, RashError>
@@ -55,6 +57,25 @@ where
     })
 }
 
+pub(crate) fn get_process_return_code<D>(
+    process_exit_status: libc::c_int,
+    delegate: &D,
+) -> Result<i32, RashError>
+where
+    D: LibCWrapper,
+{
+    if WIFEXITED(process_exit_status) {
+        return Ok(WEXITSTATUS(process_exit_status));
+    }
+
+    Err(RashError::KernelError {
+        message: RashError::format_kernel_error_message(
+            delegate,
+            "WIFEXITED was false. The call to popen didn't exit normally.",
+        ),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{ffi::CString, mem::transmute, sync::Mutex};
@@ -106,7 +127,9 @@ mod tests {
         assert_eq!(
             result,
             Err(RashError::KernelError {
-                message: "Received errno 7, Description: The call to popen returned a null stream., strerror output: Hello.".to_string()
+                message: "Received errno 7, Description: \
+                The call to popen returned a null stream., strerror output: Hello."
+                    .to_string()
             })
         );
         Ok(())
@@ -164,7 +187,9 @@ mod tests {
         assert_eq!(
             result,
             Err(RashError::KernelError {
-                message: "Received errno 7, Description: The call to dup returned -1., strerror output: Hello.".to_string()
+                message: "Received errno 7, Description: \
+                The call to dup returned -1., strerror output: Hello."
+                    .to_string()
             })
         );
     }
@@ -176,7 +201,23 @@ mod tests {
         assert_eq!(
             result,
             Err(RashError::KernelError {
-                message: "Received errno 7, Description: The call to pclose returned -1., strerror output: Hello.".to_string()
+                message: "Received errno 7, Description: \
+                The call to pclose returned -1., strerror output: Hello."
+                    .to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_get_process_return_code() {
+        let result = get_process_return_code(129 as c_int, &NullLibCWrapper {});
+        assert!(result.is_err());
+        assert_eq!(
+            result,
+            Err(RashError::KernelError {
+                message: "Received errno 7, Description: WIFEXITED was false. \
+                The call to popen didn't exit normally., strerror output: Hello."
+                    .to_string()
             })
         );
     }
