@@ -1,8 +1,16 @@
 [package]
 name = "rash"
-version = "0.1.0"
+version = "0.1.0-beta.0"
 edition = "2021"
-authors = ["Luke Elliot <lukejelliot25@gmail.com>"]
+authors = ["Luke Elliot <rashyluke@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/ljelliot/rash"
+description = """
+Rash (Rust + Bash, get it?) makes shell commands easy!
+"""
+keywords = ["bash", "command", "linux", "shell", "unix"]
+categories = ["command-line-interface", "os", "os::unix-apis"]
 
 [lib]
 path = "src/lib.rs"
