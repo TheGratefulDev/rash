@@ -1,8 +1,9 @@
-use std::{ffi::CString, fs, os::unix::io::FromRawFd, str};
+use std::{fs, os::unix::io::FromRawFd, str};
 
 use libc::{WEXITSTATUS, WIFEXITED};
 
 use crate::{
+    checked,
     error::RashError,
     utils,
     wrapper::{LibCWrapper, LibCWrapperImpl},
@@ -22,12 +23,10 @@ where
 {
     let command_as_c_string = utils::format_command_as_c_string(command)?;
 
-    let (stream, exit_status) = unsafe {
-        let c_stream = popen_checked(command_as_c_string, delegate)?;
-        let fd = dup_fd_checked(c_stream, delegate)?;
-        let exit_status = pclose_checked(c_stream, delegate)?;
-        (fs::File::from_raw_fd(fd), exit_status)
-    };
+    let c_stream = unsafe { checked::popen(command_as_c_string, delegate)? };
+    let fd = checked::dup(c_stream, delegate)?;
+    let exit_status = checked::pclose(c_stream, delegate)?;
+    let stream = unsafe { fs::File::from_raw_fd(fd) };
 
     let return_code = get_process_return_code(exit_status, delegate)?;
 
@@ -37,59 +36,6 @@ where
             message: e.to_string(),
         }),
     };
-}
-
-unsafe fn popen_checked<D>(command: CString, delegate: &D) -> Result<*mut libc::FILE, RashError>
-where
-    D: LibCWrapper,
-{
-    let stream = delegate.popen(command.as_ptr());
-    if stream.is_null() {
-        return Err(RashError::KernelError {
-            message: RashError::format_kernel_error_message(
-                delegate,
-                "The call to popen returned a null stream.",
-            ),
-        });
-    }
-    Ok(stream)
-}
-
-fn dup_fd_checked<D>(stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
-where
-    D: LibCWrapper,
-{
-    Ok(unsafe {
-        let fd = delegate.dup(delegate.fileno(stream));
-        if fd == -1 {
-            delegate.pclose(stream);
-            return Err(RashError::KernelError {
-                message: RashError::format_kernel_error_message(
-                    delegate,
-                    "The call to dup returned -1.",
-                ),
-            });
-        }
-        fd
-    })
-}
-
-fn pclose_checked<D>(c_stream: *mut libc::FILE, delegate: &D) -> Result<libc::c_int, RashError>
-where
-    D: LibCWrapper,
-{
-    Ok(unsafe {
-        let exit_status = delegate.pclose(c_stream);
-        if exit_status == -1 {
-            return Err(RashError::KernelError {
-                message: RashError::format_kernel_error_message(
-                    delegate,
-                    "The call to pclose returned -1.",
-                ),
-            });
-        }
-        exit_status
-    })
 }
 
 fn get_process_return_code<D>(

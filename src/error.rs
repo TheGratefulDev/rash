@@ -46,13 +46,12 @@ impl RashError {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::CString, mem::transmute, sync::Once};
+    use std::{ffi::CString, mem::transmute};
 
     use libc::{c_char, c_int, FILE};
 
     use super::*;
 
-    static START: Once = Once::new();
     static mut HELLO: *const CString = 0 as *const CString;
 
     struct MockLibCWrapper {}
@@ -63,16 +62,16 @@ mod tests {
             libc::popen(command, read_mode.as_ptr())
         }
 
-        unsafe fn fileno(&self, _stream: *mut FILE) -> c_int {
-            7 as c_int
+        unsafe fn fileno(&self, stream: *mut FILE) -> c_int {
+            libc::fileno(stream)
         }
 
-        unsafe fn dup(&self, _fd: c_int) -> c_int {
-            7 as c_int
+        unsafe fn dup(&self, fd: c_int) -> c_int {
+            libc::dup(fd)
         }
 
-        unsafe fn pclose(&self, _stream: *mut FILE) -> c_int {
-            7 as c_int
+        unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
+            libc::pclose(stream)
         }
 
         unsafe fn __errno_location(&self) -> *mut c_int {
@@ -81,23 +80,17 @@ mod tests {
         }
 
         unsafe fn strerror(&self, _n: c_int) -> *mut c_char {
-            START.call_once(|| unsafe {
-                let boxed = Box::new("Hello\0");
-                HELLO = transmute(boxed);
-            });
-            unsafe {
-                return (&*HELLO).as_ptr() as *mut c_char;
-            }
+            let boxed = Box::new("Hello\0");
+            HELLO = transmute(boxed);
+            return (&*HELLO).as_ptr() as *mut c_char;
         }
     }
 
     #[test]
     fn test_format_kernel_error_message() {
-        let mock_wrapper = MockLibCWrapper {};
-        let result = RashError::format_kernel_error_message(&mock_wrapper, "My description");
-
+        let ref mock_wrapper = MockLibCWrapper {};
         assert_eq!(
-            result,
+            RashError::format_kernel_error_message(mock_wrapper, "My description"),
             "Received errno 7, Description: My description, strerror output: Hello."
         );
     }
