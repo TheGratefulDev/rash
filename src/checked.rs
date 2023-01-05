@@ -101,8 +101,7 @@ mod tests {
 
     #[test]
     fn test_popen() -> Result<(), RashError> {
-        let ref delegate = NullLibCWrapper {};
-        let result = unsafe { popen(format_command_as_c_string("hi")?, delegate) };
+        let result = unsafe { popen(format_command_as_c_string("hi")?, &NullLibCWrapper {}) };
         assert!(result.is_err());
         assert_eq!(
             result,
@@ -166,6 +165,18 @@ mod tests {
             result,
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: The call to dup returned -1., strerror output: Hello.".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_pclose() {
+        let result = pclose(std::ptr::null_mut(), &NullLibCWrapper {});
+        assert!(result.is_err());
+        assert_eq!(
+            result,
+            Err(RashError::KernelError {
+                message: "Received errno 7, Description: The call to pclose returned -1., strerror output: Hello.".to_string()
             })
         );
     }
