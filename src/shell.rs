@@ -10,8 +10,7 @@ use crate::{
 pub type Out = (i32, String);
 
 pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
-    let ref delegate = LibCWrapperImpl::new();
-    run_command(c, delegate)
+    run_command(c, &LibCWrapperImpl::new())
 }
 
 fn run_command<S, D>(command: S, delegate: &D) -> Result<Out, RashError>

@@ -5,7 +5,7 @@ mod checked;
 mod error;
 pub mod shell;
 mod utils;
-pub mod wrapper;
+mod wrapper;
 
 #[cfg(unix)]
 #[macro_export]

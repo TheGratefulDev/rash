@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_dup() {
-        static PCLOSE_CALLED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+        static PCLOSE_CALLED_TIMES: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
 
         struct CountedNullLibCWrapper<D>
         where
@@ -163,7 +163,7 @@ mod tests {
             }
 
             unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
-                *PCLOSE_CALLED.lock().unwrap() = true;
+                *PCLOSE_CALLED_TIMES.lock().unwrap() += 1;
                 self.delegate.pclose(stream)
             }
 
@@ -180,10 +180,9 @@ mod tests {
             delegate: NullLibCWrapper {},
         };
 
-        // Any mut ptr will work for the FILE.
         let result = dup(std::ptr::null_mut(), delegate);
         assert!(result.is_err());
-        assert!(*PCLOSE_CALLED.lock().unwrap());
+        assert_eq!(*PCLOSE_CALLED_TIMES.lock().unwrap(), 1);
         assert_eq!(
             result,
             Err(RashError::KernelError {
@@ -210,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_get_process_return_code() {
-        let result = get_process_return_code(129 as c_int, &NullLibCWrapper {});
+        let result = get_process_return_code(128 + 1 as c_int, &NullLibCWrapper {});
         assert!(result.is_err());
         assert_eq!(
             result,
