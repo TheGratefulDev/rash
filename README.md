@@ -1,6 +1,6 @@
 <div align="center">
 
-# RsBash
+# rsbash
 
 ![GitHub issues](https://img.shields.io/github/issues/ljelliot/rash)
 ![Cargo Downloads](https://img.shields.io/crates/d/rsbash)
@@ -8,9 +8,9 @@
 
 </div>
 
-**RsBash** makes running arbitrarily complex bash commands wonderfully easy!
+**rsbash** makes running arbitrarily complex bash commands wonderfully easy!
 
-With **RsBash** you can easily use **all** your favourite bash operators in your commands, redirects `>`, pipes `|`, subshells `$(...)`, boolean logic `&& ||` etc!
+With **rsbash** you can easily use **all** your favourite bash operators in your commands, redirects `>`, pipes `|`, subshells `$(...)`, boolean logic `&& ||` etc!
 
 ## Examples
 
