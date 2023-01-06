@@ -82,8 +82,9 @@ mod tests {
     }
 
     #[test]
-    fn test_script() {
-        assert_eq!(command(PRETTY_TRIANGLE_SCRIPT).unwrap(), (0, String::from("*\n* *\n* * *\n")));
+    fn test_script() -> Result<(), RashError> {
+        assert_eq!(command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
+        Ok(())
     }
 
     const PRETTY_TRIANGLE_SCRIPT: &str = r#"
@@ -93,4 +94,28 @@ mod tests {
             s="$s *"
         done;
         "#;
+
+    #[test]
+    fn test_quotes() -> Result<(), RashError> {
+        assert_eq!(
+            command("echo -n 'a new line \n a day keeps the doctors away'")?,
+            (0, String::from("a new line \n a day keeps the doctors away"))
+        );
+        assert_eq!(
+            command("\"\"echo -n 'blah' \'blah\' 'blah'''")?,
+            (0, String::from("blah blah blah"))
+        );
+        assert_eq!(command("echo hello world")?, (0, String::from("hello world\n")));
+        assert_eq!(command("#echo 'i am silent'")?, (0, String::from("")));
+        assert_eq!(
+            command(
+                "echo \
+        -n \
+        hi \
+        there"
+            )?,
+            (0, String::from("hi there"))
+        );
+        Ok(())
+    }
 }

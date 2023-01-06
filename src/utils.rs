@@ -9,7 +9,7 @@ pub(crate) fn format_command_as_c_string<S: AsRef<str>>(cmd: S) -> Result<CStrin
 }
 
 pub(crate) fn into_bash_command<S: AsRef<str>>(s: S) -> String {
-    format!("/usr/bin/env bash -c '{}'", s.as_ref())
+    format!("/usr/bin/env bash -c {}", shell_words::quote(s.as_ref()).to_string())
 }
 
 pub(crate) fn read_file_into_buffer(mut stream: fs::File) -> Result<Vec<u8>, RashError> {
@@ -48,6 +48,6 @@ mod tests {
 
     #[test]
     fn test_into_bash_command() {
-        assert_eq!(into_bash_command("blah"), "/usr/bin/env bash -c 'blah'".to_string());
+        assert_eq!(into_bash_command("blah"), "/usr/bin/env bash -c blah");
     }
 }
