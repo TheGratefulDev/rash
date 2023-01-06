@@ -39,6 +39,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use libc::stat;
+    use std::path::PathBuf;
+
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -81,6 +86,19 @@ mod tests {
             let (_, s) = command(c).unwrap();
             assert_eq!(s, *out);
         });
+    }
+
+    #[test]
+    fn test_redirect_to_and_read_from_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().to_str().unwrap();
+
+        let script = format!("cd {}; echo -n 'foo' > bar.txt; cat bar.txt;", path);
+
+        assert_eq!(command(script)?, (0, String::from("foo")));
+
+        temp_dir.close()?;
+        Ok(())
     }
 
     #[test]
