@@ -1,23 +1,22 @@
 #[macro_use]
 extern crate lazy_static;
 
+pub use crate::{
+    error::RashError,
+    shell::{command, Out},
+};
+
 mod checked;
 mod error;
-pub mod shell;
+mod shell;
 mod utils;
 mod wrapper;
 
 #[cfg(unix)]
 #[macro_export]
 macro_rules! rash {
-    () => {
-        compile_error!("Expected only 1 argument to rash, received 0.")
-    };
     ($arg:tt) => {
         $crate::shell::command(($arg))
-    };
-    ($($arg:tt)*) => {
-        compile_error!("Expected only 1 argument to rash, received more than 1.")
     };
 }
 
