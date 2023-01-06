@@ -39,9 +39,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use libc::stat;
-    use std::path::PathBuf;
-
     use tempfile::TempDir;
 
     use super::*;
