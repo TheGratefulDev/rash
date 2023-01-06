@@ -100,17 +100,17 @@ mod tests {
 
     #[test]
     fn test_script() -> Result<(), RashError> {
-        assert_eq!(command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
-        Ok(())
-    }
-
-    const PRETTY_TRIANGLE_SCRIPT: &str = r#"
+        const PRETTY_TRIANGLE_SCRIPT: &str = r#"
         s="*"
         for i in {1..3}; do
             echo "$s"
             s="$s *"
         done;
         "#;
+
+        assert_eq!(command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
+        Ok(())
+    }
 
     #[test]
     fn test_quotes() -> Result<(), RashError> {
