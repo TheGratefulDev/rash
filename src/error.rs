@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::wrapper::LibCWrapper;
 
+#[cfg(unix)]
 #[derive(Error, Debug, PartialEq)]
 pub enum RashError {
     #[error("Null byte in command: {:?}", message)]

@@ -7,8 +7,10 @@ use crate::{
     wrapper::{LibCWrapper, LibCWrapperImpl},
 };
 
+#[cfg(unix)]
 pub type Out = (i32, String);
 
+#[cfg(unix)]
 pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
     run_command(c, &LibCWrapperImpl::new())
 }
