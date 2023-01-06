@@ -106,7 +106,17 @@ mod tests {
             (0, String::from("blah blah blah"))
         );
         assert_eq!(command("echo hello world")?, (0, String::from("hello world\n")));
+        Ok(())
+    }
+
+    #[test]
+    fn test_comments() -> Result<(), RashError> {
         assert_eq!(command("#echo 'i am silent'")?, (0, String::from("")));
+        Ok(())
+    }
+
+    #[test]
+    fn test_backslashes() -> Result<(), RashError> {
         assert_eq!(
             command(
                 "echo \
