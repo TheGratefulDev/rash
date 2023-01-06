@@ -1,5 +1,5 @@
 [package]
-name = "rash"
+name = "rsbash"
 version = "0.1.0-beta.0"
 edition = "2021"
 authors = ["Luke Elliot <rashyluke@gmail.com>"]
@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/ljelliot/rash"
 description = """
-Rash (Rust + Bash, get it?) makes shell commands easy!
+rsbash makes shell commands easy!
 """
 keywords = ["bash", "command", "linux", "shell", "unix"]
 categories = ["command-line-interface", "os", "os::unix-apis"]
@@ -18,5 +18,6 @@ path = "src/lib.rs"
 [dependencies]
 libc = "0.2"
 lazy_static = "1.4"
-thiserror = "1.0.38"
 once_cell = "1.17.0"
+shell-words = "1.1.0"
+thiserror = "1.0.38"
