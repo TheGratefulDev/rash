@@ -1,10 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-pub use crate::{
-    error::RashError,
-    shell::{command, Out},
-};
+pub use crate::{error::RashError, shell::command};
 
 mod checked;
 mod error;
