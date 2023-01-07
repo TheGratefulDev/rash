@@ -10,6 +10,7 @@ use crate::{
 type Out = (i32, String);
 
 #[cfg(unix)]
+#[doc(hidden)]
 pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
     run_command(c, &LibCWrapperImpl::new())
 }
