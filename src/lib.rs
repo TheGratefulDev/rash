@@ -34,28 +34,72 @@ mod test {
         Ok(())
     }
 
-    const SCRIPT: &'static str = r#"
-        s="*"
-        for i in {1..3}; do
-            echo "$s"
-            s="$s *"
-        done;
-        "#;
+    #[cfg(test)]
+    mod readme {
+        use tempfile::TempDir;
 
-    #[test]
-    fn test_read_me_examples() -> Result<(), RashError> {
-        let (ret_val, stdout) = rash!("echo -n 'Hello world!'")?;
-        assert_eq!(ret_val, 0);
-        assert_eq!(stdout, "Hello world!");
+        use crate::RashError;
 
-        let (ret_val, stdout) =
-            rash!("echo -n 'Hello ' | cat - && printf '%s' $(echo -n 'world!')")?;
-        assert_eq!(ret_val, 0);
-        assert_eq!(stdout, "Hello world!");
+        #[test]
+        fn test_simple() -> Result<(), RashError> {
+            let (ret_val, stdout) = rash!("echo -n 'Hello world!'")?;
+            assert_eq!(ret_val, 0);
+            assert_eq!(stdout, "Hello world!");
+            Ok(())
+        }
 
-        let (ret_val, stdout) = rash!(SCRIPT)?;
-        assert_eq!(ret_val, 0);
-        assert_eq!(stdout, "*\n* *\n* * *\n");
-        Ok(())
+        #[test]
+        fn test_less_simple() -> Result<(), RashError> {
+            let (ret_val, stdout) =
+                rash!("echo -n 'Hello ' | cat - && printf '%s' $(echo -n 'world!')")?;
+            assert_eq!(ret_val, 0);
+            assert_eq!(stdout, "Hello world!");
+            Ok(())
+        }
+
+        #[test]
+        fn test_format() -> anyhow::Result<()> {
+            let dir = TempDir::new()?;
+            let path = dir.path().to_str().unwrap();
+            let message = "Hi from within bar.txt!";
+            let script = format!("cd {}; echo -n '{}' > bar.txt; cat bar.txt;", path, message);
+
+            assert_eq!(rash!(script)?, (0, String::from(message)));
+
+            dir.close()?;
+            Ok(())
+        }
+
+        #[test]
+        fn test_script() -> anyhow::Result<()> {
+            let dir = TempDir::new()?;
+            let path = dir.path().to_str().unwrap();
+            let message = "Hi from within foo.sh!";
+            let script = format!(
+                "cd {}; echo -n \"echo -n '{}'\" > foo.sh; chmod u+x foo.sh; ./foo.sh;",
+                path, message
+            );
+
+            assert_eq!(rash!(script)?, (0, String::from(message)));
+
+            dir.close()?;
+            Ok(())
+        }
+
+        #[test]
+        fn test_raw_script() -> Result<(), RashError> {
+            const SCRIPT: &'static str = r#"
+            s="*"
+            for i in {1..3}; do
+                echo "$s"
+                s="$s *"
+            done;
+            "#;
+
+            let (ret_val, stdout) = rash!(SCRIPT)?;
+            assert_eq!(ret_val, 0);
+            assert_eq!(stdout, "*\n* *\n* * *\n");
+            Ok(())
+        }
     }
 }
