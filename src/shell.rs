@@ -98,7 +98,24 @@ mod tests {
     }
 
     #[test]
-    fn test_script() -> Result<(), RashError> {
+    fn test_run_script() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().to_str().unwrap();
+        let message = "hi from within the script!";
+
+        let script = format!(
+            "cd {}; echo -n \"echo -n '{}'\" > bar.sh; chmod u+x bar.sh; ./bar.sh;",
+            path, message
+        );
+
+        assert_eq!(command(script)?, (0, String::from(message)));
+
+        temp_dir.close()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_raw_script() -> Result<(), RashError> {
         const PRETTY_TRIANGLE_SCRIPT: &str = r#"
         s="*"
         for i in {1..3}; do
