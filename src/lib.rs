@@ -1,11 +1,12 @@
 #[macro_use]
 extern crate lazy_static;
 
-pub use crate::{error::RashError, shell::command};
+pub use crate::error::RashError;
 
 mod checked;
 mod error;
-mod shell;
+#[doc(hidden)]
+pub mod shell;
 mod utils;
 mod wrapper;
 
