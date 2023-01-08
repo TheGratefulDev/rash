@@ -17,7 +17,7 @@ There's as many ways to use **rsbash** as there are ways to use your beloved bas
 #### A simple command:
 
 ```rust
-use rsbash::rash;
+use rsbash::{rash, RashError};
 
 pub fn simple() -> Result<(), RashError> {
     let (ret_val, stdout) = rash!("echo -n 'Hello world!'")?;
@@ -30,7 +30,7 @@ pub fn simple() -> Result<(), RashError> {
 #### A _less_ simple command:
 
 ```rust
-use rsbash::rash;
+use rsbash::{rash, RashError};
 
 pub fn less_simple() -> Result<(), RashError> {
     let (ret_val, stdout) =
@@ -85,7 +85,7 @@ fn script() -> anyhow::Result<()> {
 #### Using a raw string script:
 
 ```rust
-use rsbash::rash;
+use rsbash::{rash, RashError};
 
 const SCRIPT: &'static str = r#"
     s="*"
