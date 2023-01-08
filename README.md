@@ -47,7 +47,7 @@ pub fn less_simple() -> Result<(), RashError> {
 use rsbash::rash;
 use tempfile::TempDir;
 
-fn format() -> anyhow::Result<()> {
+pub fn format() -> anyhow::Result<()> {
     let dir = TempDir::new()?;
     let path = dir.path().to_str().unwrap();
     let message = "Hi from within bar.txt!";
@@ -66,7 +66,7 @@ fn format() -> anyhow::Result<()> {
 use rsbash::rash;
 use tempfile::TempDir;
 
-fn script() -> anyhow::Result<()> {
+pub fn script() -> anyhow::Result<()> {
     let dir = TempDir::new()?;
     let path = dir.path().to_str().unwrap();
     let message = "Hi from within foo.sh!";
