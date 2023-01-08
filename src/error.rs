@@ -9,7 +9,8 @@ use crate::wrapper::LibCWrapper;
 #[derive(Error, Debug, PartialEq)]
 pub enum RashError {
     /// The given command contained a null byte.
-    /// Commands must not contain null bytes as they're converted into CStrings.
+    /// Commands must **not** contain null bytes as they're converted into CStrings.
+    ///
     /// If this error is thrown, the error message will contain the position
     /// of the null byte in the command.
     #[error("Null byte in command: {:?}", message)]
@@ -17,6 +18,7 @@ pub enum RashError {
         message: String,
     },
     /// A system call failed.
+    ///
     /// If this error is thrown, the error message will contain the errno,
     /// a description of syscall that failed, and the strerror output.
     #[error("{:?}", message)]
@@ -26,6 +28,9 @@ pub enum RashError {
     /// We couldn't obtain stdout.
     /// This can occur if the stdout is not valid UTF-8
     /// or for any standard IO error kind.
+    ///
+    /// If this error is thrown, the error message will be the error message
+    /// given by calling `to_string()` on the source error.
     #[error("Couldn't read stdout: {:?}", message)]
     FailedToReadStdout {
         message: String,
