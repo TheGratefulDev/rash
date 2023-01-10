@@ -21,10 +21,13 @@ where
     let command_as_c_string = utils::format_command_as_c_string(command)?;
 
     let run_process = move |wrapper: &W| -> Result<(File, i32), RashError> {
-        let c_stream = unsafe { wrapper.popen(command_as_c_string)? };
-        let fd = wrapper.dup_fd(c_stream)?;
-        let exit_status = wrapper.pclose(c_stream)?;
-        let stream = unsafe { File::from_raw_fd(fd) };
+        let (stream, exit_status) = unsafe {
+            let c_stream = wrapper.popen(command_as_c_string)?;
+            let fd = wrapper.dup_fd(c_stream)?;
+            let exit_status = wrapper.pclose(c_stream)?;
+            let stream = File::from_raw_fd(fd);
+            (stream, exit_status)
+        };
         let return_code = wrapper.get_process_return_code(exit_status)?;
         Ok((stream, return_code))
     };

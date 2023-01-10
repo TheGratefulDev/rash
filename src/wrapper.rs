@@ -47,8 +47,8 @@ impl LibCWrapper for LibCWrapperImpl {
 
 pub(crate) trait CheckedLibCWrapper {
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError>;
-    fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError>;
-    fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError>;
+    unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError>;
+    unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError>;
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError>;
 }
 
@@ -83,30 +83,26 @@ where
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError> {
         let stream = self.delegate.popen(command.as_ptr());
         if stream.is_null() {
-            return Err(self.kernel_error("The call to popen returned a null stream."));
+            return Err(self.kernel_error("The call to popen returned a null stream"));
         }
         Ok(stream)
     }
 
-    fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError> {
-        Ok(unsafe {
-            let exit_status = self.delegate.pclose(c_stream);
-            if exit_status == -1 {
-                return Err(self.kernel_error("The call to pclose returned -1."));
-            }
-            exit_status
-        })
+    unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError> {
+        let exit_status = self.delegate.pclose(c_stream);
+        if exit_status == -1 {
+            return Err(self.kernel_error("The call to pclose returned -1"));
+        }
+        Ok(exit_status)
     }
 
-    fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError> {
-        Ok(unsafe {
-            let fd = self.delegate.dup(self.delegate.fileno(stream));
-            if fd == -1 {
-                self.delegate.pclose(stream);
-                return Err(self.kernel_error("The call to dup returned -1."));
-            }
-            fd
-        })
+    unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError> {
+        let fd = self.delegate.dup(self.delegate.fileno(stream));
+        if fd == -1 {
+            self.delegate.pclose(stream);
+            return Err(self.kernel_error("The call to dup returned -1"));
+        }
+        Ok(fd)
     }
 
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError> {
@@ -115,7 +111,7 @@ where
         }
 
         return Err(
-            self.kernel_error("WIFEXITED was false. The call to popen didn't exit normally.")
+            self.kernel_error("WIFEXITED was false: The call to popen didn't exit normally")
         );
     }
 }
@@ -178,7 +174,7 @@ mod tests {
             result,
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: \
-                The call to popen returned a null stream., strerror output: Hello."
+                The call to popen returned a null stream, strerror output: Hello."
                     .to_string()
             })
         );
@@ -232,14 +228,14 @@ mod tests {
 
         let checked_libc_wrapper = CheckedLibCWrapperImpl::new(delegate);
 
-        let result = checked_libc_wrapper.dup_fd(std::ptr::null_mut());
+        let result = unsafe { checked_libc_wrapper.dup_fd(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(*PCLOSE_CALLED_TIMES.lock().unwrap(), 1);
         assert_eq!(
             result,
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: \
-                The call to dup returned -1., strerror output: Hello."
+                The call to dup returned -1, strerror output: Hello."
                     .to_string()
             })
         );
@@ -247,13 +243,13 @@ mod tests {
 
     #[rstest]
     fn test_pclose(checked_libc_wrapper: impl CheckedLibCWrapper) {
-        let result = checked_libc_wrapper.pclose(std::ptr::null_mut());
+        let result = unsafe { checked_libc_wrapper.pclose(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(
             result,
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: \
-                The call to pclose returned -1., strerror output: Hello."
+                The call to pclose returned -1, strerror output: Hello."
                     .to_string()
             })
         );
@@ -266,8 +262,8 @@ mod tests {
         assert_eq!(
             result,
             Err(RashError::KernelError {
-                message: "Received errno 7, Description: WIFEXITED was false. \
-                The call to popen didn't exit normally., strerror output: Hello."
+                message: "Received errno 7, Description: WIFEXITED was false: \
+                The call to popen didn't exit normally, strerror output: Hello."
                     .to_string()
             })
         );

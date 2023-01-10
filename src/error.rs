@@ -38,18 +38,19 @@ pub enum RashError {
 }
 
 impl RashError {
-    pub(crate) fn format_kernel_error_message<D, S>(delegate: &D, description: S) -> String
+    pub(crate) fn format_kernel_error_message<L, S>(wrapper: &L, description: S) -> String
     where
-        D: LibCWrapper,
+        L: LibCWrapper,
         S: AsRef<str>,
     {
         let (errno, strerror) = unsafe {
-            let errno = *delegate.__errno_location();
-            let ptr = delegate.strerror(errno);
-            match CStr::from_ptr(ptr).to_str() {
-                Ok(s) => (errno, s.to_string()),
-                Err(err) => (errno, err.to_string()),
-            }
+            let errno = *wrapper.__errno_location();
+            let ptr = wrapper.strerror(errno);
+            let strerror = match CStr::from_ptr(ptr).to_str() {
+                Ok(s) => s.to_string(),
+                Err(e) => e.to_string(),
+            };
+            (errno, strerror)
         };
 
         format!(
