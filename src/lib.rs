@@ -20,7 +20,6 @@ extern crate lazy_static;
 
 pub use crate::error::RashError;
 
-mod checked;
 mod error;
 #[doc(hidden)]
 pub mod shell;

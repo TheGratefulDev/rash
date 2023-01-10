@@ -1,39 +1,46 @@
-use std::{fs, os::unix::io::FromRawFd, str};
+use std::{fs::File, os::unix::io::FromRawFd, str};
 
 use crate::{
-    checked,
     error::RashError,
     utils,
-    wrapper::{LibCWrapper, LibCWrapperImpl},
+    wrapper::{CheckedLibCWrapper, CheckedLibCWrapperImpl, LibCWrapperImpl},
 };
 
 type Out = (i32, String);
 
 #[cfg(unix)]
 pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
-    run_command(c, &LibCWrapperImpl::new())
+    run_command(c, &CheckedLibCWrapperImpl::new(LibCWrapperImpl {}))
 }
 
-fn run_command<S, D>(command: S, delegate: &D) -> Result<Out, RashError>
+fn run_command<S, W>(command: S, wrapper: &W) -> Result<Out, RashError>
 where
     S: AsRef<str>,
-    D: LibCWrapper,
+    W: CheckedLibCWrapper,
 {
     let command_as_c_string = utils::format_command_as_c_string(command)?;
 
-    let c_stream = unsafe { checked::popen(command_as_c_string, delegate)? };
-    let fd = checked::dup(c_stream, delegate)?;
-    let exit_status = checked::pclose(c_stream, delegate)?;
-    let stream = unsafe { fs::File::from_raw_fd(fd) };
-
-    let return_code = checked::get_process_return_code(exit_status, delegate)?;
-
-    return match str::from_utf8(&utils::read_file_into_buffer(stream)?) {
-        Ok(s) => Ok((return_code, s.to_string())),
-        Err(e) => Err(RashError::FailedToReadStdout {
-            message: e.to_string(),
-        }),
+    let run_process = move |wrapper: &W| -> Result<(File, i32), RashError> {
+        let c_stream = unsafe { wrapper.popen(command_as_c_string)? };
+        let fd = wrapper.dup_fd(c_stream)?;
+        let exit_status = wrapper.pclose(c_stream)?;
+        let stream = unsafe { File::from_raw_fd(fd) };
+        let return_code = wrapper.get_process_return_code(exit_status)?;
+        Ok((stream, return_code))
     };
+
+    let read_stdout = move |stream: File| -> Result<String, RashError> {
+        return match str::from_utf8(&utils::read_file_into_buffer(stream)?) {
+            Ok(s) => Ok(s.to_string()),
+            Err(e) => Err(RashError::FailedToReadStdout {
+                message: e.to_string(),
+            }),
+        };
+    };
+
+    let (stream, return_code) = run_process(wrapper)?;
+
+    Ok((return_code, read_stdout(stream)?))
 }
 
 #[cfg(test)]
