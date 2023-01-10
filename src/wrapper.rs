@@ -167,7 +167,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_popen(checked_libc_wrapper: impl CheckedLibCWrapper) -> Result<(), RashError> {
+    fn test_popen_returns_error_when_libc_popen_returns_a_null_ptr(
+        checked_libc_wrapper: impl CheckedLibCWrapper,
+    ) -> Result<(), RashError> {
         let result = unsafe { checked_libc_wrapper.popen(format_command_as_c_string("hi")?) };
         assert!(result.is_err());
         assert_eq!(
@@ -182,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dup() {
+    fn test_dup_fd_returns_error_when_libc_dup_returns_minus_one() {
         static PCLOSE_CALLED_TIMES: Lazy<Mutex<i32>> = Lazy::new(|| Mutex::new(0));
 
         struct CountedNullLibCWrapper<D>
@@ -242,7 +244,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_pclose(checked_libc_wrapper: impl CheckedLibCWrapper) {
+    fn test_pclose_returns_error_when_libc_pclose_returns_minus_one(
+        checked_libc_wrapper: impl CheckedLibCWrapper,
+    ) {
         let result = unsafe { checked_libc_wrapper.pclose(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(
@@ -256,7 +260,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_process_return_code(checked_libc_wrapper: impl CheckedLibCWrapper) {
+    fn test_get_process_return_code_returns_error_if_wifexited_is_false(
+        checked_libc_wrapper: impl CheckedLibCWrapper,
+    ) {
         let result = checked_libc_wrapper.get_process_return_code(128 + 1 as c_int);
         assert!(result.is_err());
         assert_eq!(

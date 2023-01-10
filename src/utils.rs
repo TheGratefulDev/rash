@@ -27,7 +27,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_format_command_as_c_string() {
+    fn test_format_command_as_c_string_with_null_byte_returns_error() {
         let command_with_null_byte =
             unsafe { std::str::from_utf8_unchecked([5, 6, 7, 8, 0, 10, 11, 12].as_ref()) };
 

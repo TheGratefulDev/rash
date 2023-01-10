@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_kernel_error_message() {
+    fn test_format_kernel_error_message_formats_correctly() {
         let ref mock_wrapper = MockLibCWrapper {};
         assert_eq!(
             RashError::format_kernel_error_message(mock_wrapper, "My description"),

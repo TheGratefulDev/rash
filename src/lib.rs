@@ -159,7 +159,7 @@ mod test {
     const COMMAND: &'static str = "echo -n hi";
 
     #[test]
-    fn test_rash() -> Result<(), RashError> {
+    fn test_rash_with_various_arg_types() -> Result<(), RashError> {
         let command = String::from("echo -n hi");
         let expected = (0, "hi".to_string());
 
