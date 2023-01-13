@@ -82,37 +82,38 @@ where
 {
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError> {
         let stream = self.delegate.popen(command.as_ptr());
-        if stream.is_null() {
-            return Err(self.kernel_error("The call to popen returned a null stream"));
-        }
-        Ok(stream)
+        return if stream.is_null() {
+            Err(self.kernel_error("The call to popen returned a null stream"))
+        } else {
+            Ok(stream)
+        };
     }
 
     unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError> {
         let exit_status = self.delegate.pclose(c_stream);
-        if exit_status == -1 {
-            return Err(self.kernel_error("The call to pclose returned -1"));
-        }
-        Ok(exit_status)
+        return if exit_status == -1 {
+            Err(self.kernel_error("The call to pclose returned -1"))
+        } else {
+            Ok(exit_status)
+        };
     }
 
     unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError> {
         let fd = self.delegate.dup(self.delegate.fileno(stream));
-        if fd == -1 {
+        return if fd == -1 {
             self.delegate.pclose(stream);
-            return Err(self.kernel_error("The call to dup returned -1"));
-        }
-        Ok(fd)
+            Err(self.kernel_error("The call to dup returned -1"))
+        } else {
+            Ok(fd)
+        };
     }
 
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError> {
         if WIFEXITED(process_exit_status) {
-            return Ok(WEXITSTATUS(process_exit_status));
+            Ok(WEXITSTATUS(process_exit_status))
+        } else {
+            Err(self.kernel_error("WIFEXITED was false: The call to popen didn't exit normally"))
         }
-
-        return Err(
-            self.kernel_error("WIFEXITED was false: The call to popen didn't exit normally")
-        );
     }
 }
 
