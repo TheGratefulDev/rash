@@ -1,13 +1,13 @@
 [package]
 name = "rsbash"
-version = "0.1.1-beta.2"
+version = "0.1.2-beta.0"
 edition = "2021"
 authors = ["Luke Elliot <rashyluke@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/ljelliot/rash"
 description = """
-run bash commands from rust. Simply.
+run bash commands from rust.
 """
 keywords = ["bash", "command", "linux", "shell", "unix"]
 categories = ["command-line-interface", "os", "os::unix-apis"]

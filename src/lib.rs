@@ -1,20 +1,58 @@
-//! **rsbash:** run bash commands from rust. Simply.
+//! **rsbash:** run bash commands from rust.
 //!
-//! ## How simply?
+//! Our macro `rash!` allows you to call out to a bash shell, just as you would typically from a terminal.
+//! Since this is accomplished by interacting with libc, `rash!` can only be used on unix-like platforms (Linux, macOS etc).
+//!
+//! ## Motivation
+//!
+//! Making a shell command with the native `std::process::Command` builder is _quite_ involved.
+//!
+//! Suppose you wanted to write "Hello world!" to stdout.
 //!```
-//! use rsbash::{rash, RashError};
+//! use std::io::Write;
+//! use std::process::Command;
 //!
-//! pub fn simple() -> Result<(), RashError> {
-//!     let (ret_val, stdout) = rash!("echo -n 'Hello world!'")?;
-//!     assert_eq!(ret_val, 0);
-//!     assert_eq!(stdout, "Hello world!");
-//!     Ok(())
-//! }
+//! let command = Command::new("echo")
+//!               .arg("Hello world!")
+//!               .output()
+//!               .expect("Uh oh, couldn't say hello!");
+//! std::io::stdout().write_all(&command.stdout).unwrap();
+//!
+//! assert_eq!(std::str::from_utf8(&command.stdout).unwrap(), "Hello world!\n");
 //! ```
 //!
-//! See the [`rash!`](macro@rash) macro and [`RashError`](enum@RashError) error for more information.
+//! Now suppose you wanted to pipe the output to a second command, and then write the result to stdout:
+//! ```
+//! use std::process::{Command, Stdio};
+//! use std::io::Write;
 //!
-
+//! let echo = Command::new("echo")
+//!            .arg("Hello world!")
+//! 		   .stdout(Stdio::piped())
+//! 		   .spawn()
+//! 		   .expect("Uh oh, couldn't say hello!");
+//! 					   
+//! let grep = Command::new("grep")
+//!            .arg("Hello")
+//!            .stdin(Stdio::from(echo.stdout.unwrap()))
+//!            .output()
+//!            .expect("Uh oh, couldn't grep for Hello!");
+//!     
+//! std::io::stdout().write_all(&grep.stdout).unwrap();
+//!
+//! assert_eq!(std::str::from_utf8(&grep.stdout).unwrap(), "Hello world!\n");
+//! ```
+//!
+//! With `rash!` the same command is as simple as:
+//!
+//!```
+//! use rsbash::rash;
+//!
+//! let (ret_val, stdout) = rash!("echo 'Hello world!' | grep 'Hello'").unwrap();
+//! assert_eq!(stdout, "Hello world!\n");
+//! ```
+//!
+//! See the [`rash!`](macro@rash) macro and [`RashError`](enum@RashError) for more information.
 #[macro_use]
 extern crate lazy_static;
 
@@ -63,25 +101,7 @@ mod wrapper;
 ///     Ok(())
 /// }
 /// ```
-/// #### With a format!'d string:
-///
-/// ```
-/// use rsbash::rash;
-/// use tempfile::TempDir;
-///
-/// pub fn format() -> anyhow::Result<()> {
-///     let dir = TempDir::new()?;
-///     let path = dir.path().to_str().unwrap();
-///     let message = "Hi from within bar.txt!";
-///     let script = format!("cd {}; echo -n '{}' > bar.txt; cat bar.txt;", path, message);
-///
-///     assert_eq!(rash!(script)?, (0, String::from(message)));
-///
-///     dir.close()?;
-///     Ok(())
-/// }
-/// ```
-/// #### Execute a script:
+/// #### Format and execute a script:
 /// ```
 /// use rsbash::rash;
 /// use tempfile::TempDir;
@@ -115,7 +135,7 @@ mod wrapper;
 ///     done;
 ///     "#;
 ///
-/// pub fn raw_script() -> Result<(), RashError> {  // ... it prints a lovely triangle.
+/// pub fn raw_script() -> Result<(), RashError> {  // ... it prints a triangle!
 ///     let (ret_val, stdout) = rash!(SCRIPT)?;     // *
 ///     assert_eq!(ret_val, 0);                     // * *
 ///     assert_eq!(stdout, "*\n* *\n* * *\n");      // * * *   
@@ -123,7 +143,7 @@ mod wrapper;
 /// }
 /// ```
 ///
-/// # Compile errors.
+/// # Compile errors
 /// #### Passing a non String or string literal as an argument:
 /// ```compile_fail
 /// use rsbash::{rash, RashError};
