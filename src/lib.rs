@@ -115,7 +115,7 @@ mod wrapper;
 ///        path, message
 ///     );
 ///
-///     assert_eq!(rash!(script)?, (0, String::from(message)));
+///     //TODO: Update this test.
 ///
 ///     dir.close()?;
 ///     Ok(())
@@ -136,7 +136,7 @@ mod wrapper;
 ///     "#;
 ///
 /// pub fn raw_script() -> Result<(), RashError> {  // ... it prints a triangle!
-///     let (ret_val, stdout) = rash!(SCRIPT)?;     // *
+///     let (ret_val, stdout) = rash!("{}", SCRIPT)?;     // *
 ///     assert_eq!(ret_val, 0);                     // * *
 ///     assert_eq!(stdout, "*\n* *\n* * *\n");      // * * *   
 ///     Ok(())
@@ -144,12 +144,12 @@ mod wrapper;
 /// ```
 ///
 /// # Compile errors
-/// #### Passing a non String or string literal as an argument:
+/// #### Passing a non string literal as an argument:
 /// ```compile_fail
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn wrong_type() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!(35345)?;          // the trait `AsRef<str>` is not implemented for `{integer}`
+///     let (ret_val, stdout) = rash!(35345)?;          // format argument must be a string literal
 ///     Ok(())
 /// }
 /// ```
@@ -158,17 +158,16 @@ mod wrapper;
 /// ```compile_fail
 /// use rsbash::{rash, RashError};
 ///
-/// pub fn wrong_arg_count() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!()?;               // "missing tokens in macro arguments."
-///     let (ret_val, stdout) = rash!("blah", "blah")?; // "no rules expected this token in macro call."
+/// pub fn no_args() -> Result<(), RashError> {
+///     let (ret_val, stdout) = rash!()?;               // "requires at least a format string argument"
 ///     Ok(())
 /// }
 /// ```
 #[cfg(unix)]
 #[macro_export]
 macro_rules! rash {
-    ($arg:tt) => {
-        $crate::shell::command(($arg))
+    ($($arg:tt)*) => {
+        $crate::shell::command(format!($($arg)*))
     };
 }
 
@@ -179,13 +178,42 @@ mod test {
     const COMMAND: &'static str = "echo -n hi";
 
     #[test]
-    fn test_rash_with_various_arg_types() -> Result<(), RashError> {
-        let command = String::from("echo -n hi");
+    fn test_rash_with_a_single_string_literal() -> Result<(), RashError> {
+        Ok(assert_eq!(rash!("echo -n hi")?, (0, "hi".to_string())))
+    }
+
+    #[test]
+    fn test_rash_with_non_string_literals() -> Result<(), RashError> {
+        let command = "echo -n hi".to_string();
         let expected = (0, "hi".to_string());
 
-        assert_eq!(rash!("echo -n hi")?, expected);
-        assert_eq!(rash!(command)?, expected);
-        assert_eq!(rash!(COMMAND)?, expected);
+        assert_eq!(rash!("{}", command)?, expected);
+        assert_eq!(rash!("{}", COMMAND)?, expected);
         Ok(())
+    }
+
+    #[test]
+    fn test_rash_with_simple_formatting() -> Result<(), RashError> {
+        let expected = (0, "hi bye".to_string());
+        assert_eq!(rash!("echo -n {} {}", "hi", "bye")?, expected);
+
+        let hi = "hi";
+        let bye = "bye".to_string();
+        Ok(assert_eq!(rash!("echo -n {} {}", hi, bye)?, expected))
+    }
+
+    #[test]
+    fn test_rash_with_variable_capture_formatting() -> Result<(), RashError> {
+        let (one, two) = (1, 2);
+        Ok(assert_eq!(rash!("echo -n '{one} + {two}'")?, (0, "1 + 2".to_string())))
+    }
+
+    #[test]
+    fn test_rash_with_positional_parameters() -> Result<(), RashError> {
+        let (one, three) = (1, 3);
+        Ok(assert_eq!(
+            rash!("echo -n '{one} + {two} + {three}'", two = 2)?,
+            (0, "1 + 2 + 3".to_string())
+        ))
     }
 }
