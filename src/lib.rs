@@ -68,9 +68,10 @@ mod wrapper;
 /// Run a bash command.
 ///
 /// #### Arguments:
-/// `rash!` expects at least a single argument of a string literal. Any further arguments should be formatting arguments.
+/// `rash!` expects at least a single argument of a string literal representing the command to run.
+/// Any further arguments should be formatting arguments to the command.
 ///
-/// `rash!` supports the exact syntax of the well-known and well-loved `format!` macro, see [`std::fmt`](https://doc.rust-lang.org/stable/std/fmt/) for more details.
+/// This syntax is the exact syntax of the well-known and well-loved `format!` macro, see [`std::fmt`](https://doc.rust-lang.org/stable/std/fmt/) for more details.
 ///
 /// #### Returns:
 /// `rash!` returns a `Result<(i32, String), RashError>`.
@@ -159,12 +160,12 @@ mod wrapper;
 /// ```
 ///
 /// # Compile errors
-/// #### Passing a non string literal as an argument:
+/// #### Passing a non-string literal as an argument:
 /// ```compile_fail
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn wrong_type() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!(35345)?;          // format argument must be a string literal
+///     let (ret_val, stdout) = rash!(35345)?;  // format argument must be a string literal
 ///     Ok(())
 /// }
 /// ```
@@ -174,7 +175,7 @@ mod wrapper;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn no_args() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!()?;               // "requires at least a format string argument"
+///     let (ret_val, stdout) = rash!()?;      // "requires at least a format string argument"
 ///     Ok(())
 /// }
 /// ```
