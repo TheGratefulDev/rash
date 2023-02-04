@@ -202,7 +202,7 @@ mod wrapper;
 #[macro_export]
 macro_rules! rash {
     ($($arg:tt)*) => {
-        $crate::shell::command(format!($($arg)*))
+        $crate::shell::__command(format!($($arg)*))
     };
 }
 

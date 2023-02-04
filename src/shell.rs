@@ -9,7 +9,7 @@ use crate::{
 type Out = (i32, String);
 
 #[cfg(unix)]
-pub fn command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
+pub fn __command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
     run_command(c, &CheckedLibCWrapperImpl::new(LibCWrapperImpl {}))
 }
 
@@ -64,7 +64,7 @@ mod tests {
         ]
         .iter()
         .for_each(|c| {
-            let (r, _) = command(c).unwrap();
+            let (r, _) = __command(c).unwrap();
             assert_eq!(r, 0);
         });
     }
@@ -74,7 +74,7 @@ mod tests {
         [("i_am_not_a_valid_executable", 127), ("echo hi | grep 'bye'", 1), ("exit 54;", 54)]
             .iter()
             .for_each(move |(c, ret)| {
-                let (r, _) = command(c).unwrap();
+                let (r, _) = __command(c).unwrap();
                 assert_eq!(r, *ret);
             });
     }
@@ -89,7 +89,7 @@ mod tests {
         ]
         .iter()
         .for_each(move |(c, out)| {
-            let (_, s) = command(c).unwrap();
+            let (_, s) = __command(c).unwrap();
             assert_eq!(s, *out);
         });
     }
@@ -101,7 +101,7 @@ mod tests {
 
         let script = format!("cd {}; echo -n 'foo' > bar.txt; cat bar.txt;", path);
 
-        assert_eq!(command(script)?, (0, String::from("foo")));
+        assert_eq!(__command(script)?, (0, String::from("foo")));
 
         temp_dir.close()?;
         Ok(())
@@ -118,7 +118,7 @@ mod tests {
             path, message
         );
 
-        assert_eq!(command(script)?, (0, String::from(message)));
+        assert_eq!(__command(script)?, (0, String::from(message)));
 
         temp_dir.close()?;
         Ok(())
@@ -134,34 +134,34 @@ mod tests {
         done;
         "#;
 
-        assert_eq!(command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
+        assert_eq!(__command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
         Ok(())
     }
 
     #[test]
     fn test_quotes() -> Result<(), RashError> {
         assert_eq!(
-            command("echo -n 'a new line \n a day keeps the doctors away'")?,
+            __command("echo -n 'a new line \n a day keeps the doctors away'")?,
             (0, String::from("a new line \n a day keeps the doctors away"))
         );
         assert_eq!(
-            command("\"\"echo -n 'blah' \'blah\' 'blah'''")?,
+            __command("\"\"echo -n 'blah' \'blah\' 'blah'''")?,
             (0, String::from("blah blah blah"))
         );
-        assert_eq!(command("echo hello world")?, (0, String::from("hello world\n")));
+        assert_eq!(__command("echo hello world")?, (0, String::from("hello world\n")));
         Ok(())
     }
 
     #[test]
     fn test_comments() -> Result<(), RashError> {
-        assert_eq!(command("#echo 'i am silent'")?, (0, String::from("")));
+        assert_eq!(__command("#echo 'i am silent'")?, (0, String::from("")));
         Ok(())
     }
 
     #[test]
     fn test_backslashes() -> Result<(), RashError> {
         assert_eq!(
-            command(
+            __command(
                 "echo \
         -n \
         hi \
