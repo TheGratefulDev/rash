@@ -11,7 +11,7 @@ pub(crate) trait LibCWrapper {
     unsafe fn popen(&self, command: *const c_char) -> *mut FILE;
     unsafe fn fileno(&self, stream: *mut FILE) -> c_int;
     unsafe fn dup(&self, fd: c_int) -> c_int;
-    unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int;
+    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int;
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int;
     unsafe fn __errno_location(&self) -> *mut c_int;
     unsafe fn strerror(&self, n: c_int) -> *mut c_char;
@@ -32,8 +32,8 @@ impl LibCWrapper for LibCWrapperImpl {
         libc::dup(fd)
     }
 
-    unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
-        libc::dup2(src, dst)
+    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int {
+        libc::dup2(oldfd, newfd)
     }
 
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
@@ -52,7 +52,7 @@ impl LibCWrapper for LibCWrapperImpl {
 pub(crate) trait CheckedLibCWrapper {
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError>;
     unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError>;
-    unsafe fn dup2(&self, src: c_int, dst: c_int) -> Result<(), RashError>;
+    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> Result<(), RashError>;
     unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError>;
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError>;
 }
@@ -103,8 +103,8 @@ where
         };
     }
 
-    unsafe fn dup2(&self, src: c_int, dst: c_int) -> Result<(), RashError> {
-        let fd = self.delegate.dup2(src, dst);
+    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> Result<(), RashError> {
+        let fd = self.delegate.dup2(oldfd, newfd);
         return if fd == -1 {
             Err(self.kernel_error("The call to dup2 returned -1"))
         } else {
@@ -159,7 +159,7 @@ mod tests {
             -1 as c_int
         }
 
-        unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
+        unsafe fn dup2(&self, _oldfd: c_int, _newfd: c_int) -> c_int {
             -1 as c_int
         }
 
@@ -228,8 +228,8 @@ mod tests {
                 self.delegate.dup(fd)
             }
 
-            unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
-                self.delegate.dup2(src, dst)
+            unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int {
+                self.delegate.dup2(oldfd, newfd)
             }
 
             unsafe fn pclose(&self, stream: *mut FILE) -> c_int {

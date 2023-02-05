@@ -1,4 +1,12 @@
-use std::{fs::File, os::unix::io::FromRawFd, str};
+use libc::{c_char, close, fclose, fdopen, fflush};
+use std::{
+    ffi::CString,
+    fs::File,
+    io::Read,
+    os::{fd::AsRawFd, unix::io::FromRawFd},
+    str,
+};
+use tempfile::tempfile;
 
 use crate::{
     error::RashError,
@@ -6,7 +14,7 @@ use crate::{
     wrapper::{CheckedLibCWrapper, CheckedLibCWrapperImpl, LibCWrapperImpl},
 };
 
-type Out = (i32, String);
+type Out = (i32, String, String);
 
 #[cfg(unix)]
 pub fn __command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
@@ -20,30 +28,56 @@ where
 {
     let command_as_c_string = utils::format_command_as_c_string(command)?;
 
-    let run_process = move |wrapper: &W| -> Result<(File, i32), RashError> {
-        let (stream, exit_status) = unsafe {
-            let c_stream = wrapper.popen(command_as_c_string)?;
-            let fd = wrapper.dup_fd(c_stream)?;
-            let exit_status = wrapper.pclose(c_stream)?;
-            let stream = File::from_raw_fd(fd);
-            (stream, exit_status)
+    let run_process = move |wrapper: &W| -> Result<(File, File, i32), RashError> {
+        let (stdout, stderr, process_exit_status) = unsafe {
+            let filename = CString::new("foo").unwrap();
+            let mode = CString::new("w+").unwrap();
+            let stderr_fh = libc::fopen(filename.as_ptr(), mode.as_ptr());
+            println!("Old stderr fd = {fd}", fd = libc::fileno(stderr_fh));
+            let stderr_fd = libc::dup2(libc::fileno(stderr_fh), 2 as libc::c_int);
+            println!("New stderr fd = {fd}", fd = stderr_fd);
+            fclose(stderr_fh);
+
+            let stdout_fh = wrapper.popen(command_as_c_string)?;
+            let stdout_fd = wrapper.dup_fd(stdout_fh)?;
+            println!("New stdout fd = {fd}", fd = stdout_fd);
+            let process_exit_status = wrapper.pclose(stdout_fh)?;
+
+            let stderr = File::from_raw_fd(stderr_fd);
+            let stdout = File::from_raw_fd(stdout_fd);
+            (stdout, stderr, process_exit_status)
         };
-        let return_code = wrapper.get_process_return_code(exit_status)?;
-        Ok((stream, return_code))
+        let return_code = wrapper.get_process_return_code(process_exit_status)?;
+        Ok((stdout, stderr, return_code))
     };
 
-    let read_stdout = move |stream: File| -> Result<String, RashError> {
-        return match str::from_utf8(&utils::read_file_into_buffer(stream)?) {
+    let read = move |f: File, stderr: bool| -> Result<String, RashError> {
+        return match str::from_utf8(&utils::read_file_into_buffer(f)?) {
             Ok(s) => Ok(s.to_string()),
-            Err(e) => Err(RashError::FailedToReadStdout {
-                message: e.to_string(),
-            }),
+            Err(e) => {
+                let err = if stderr {
+                    RashError::FailedToReadStderr {
+                        message: e.to_string(),
+                    }
+                } else {
+                    RashError::FailedToReadStdout {
+                        message: e.to_string(),
+                    }
+                };
+                Err(err)
+            }
         };
     };
 
-    let (stream, return_code) = run_process(wrapper)?;
+    let (stdout, stderr, return_code) = run_process(wrapper)?;
 
-    Ok((return_code, read_stdout(stream)?))
+    let se = read(stderr, true)?;
+    println!("Here >> {}", se);
+
+    let so = read(stdout, true)?;
+    println!("SO >> {}", so);
+
+    Ok((return_code, so, se))
 }
 
 #[cfg(test)]
@@ -51,6 +85,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    lazy_static! {
+        static ref EMPTY_STRING: String = String::default();
+    }
 
     #[test]
     fn test_commands_return_zero() {
@@ -64,7 +102,7 @@ mod tests {
         ]
         .iter()
         .for_each(|c| {
-            let (r, _) = __command(c).unwrap();
+            let (r, _, _) = __command(c).unwrap();
             assert_eq!(r, 0);
         });
     }
@@ -74,7 +112,7 @@ mod tests {
         [("i_am_not_a_valid_executable", 127), ("echo hi | grep 'bye'", 1), ("exit 54;", 54)]
             .iter()
             .for_each(move |(c, ret)| {
-                let (r, _) = __command(c).unwrap();
+                let (r, _, _) = __command(c).unwrap();
                 assert_eq!(r, *ret);
             });
     }
@@ -89,22 +127,29 @@ mod tests {
         ]
         .iter()
         .for_each(move |(c, out)| {
-            let (_, s) = __command(c).unwrap();
-            assert_eq!(s, *out);
+            make_assertions(__command(c).unwrap(), out);
         });
+    }
+
+    #[test]
+    fn test_commands_stderr() -> Result<(), RashError> {
+        Ok(assert_eq!(__command("echo -n 'hi' >&2")?, (0, EMPTY_STRING.clone(), "hi".to_string())))
+    }
+
+    #[test]
+    fn test_combined_stdout() -> Result<(), RashError> {
+        Ok(make_assertions(__command("echo -n hi; echo -n bye 2>&1;")?, "hi bye"))
     }
 
     #[test]
     fn test_redirect_to_and_read_from_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().to_str().unwrap();
+        let script = format!("cd {path}; echo -n 'foo' > bar.txt; cat bar.txt;");
 
-        let script = format!("cd {}; echo -n 'foo' > bar.txt; cat bar.txt;", path);
+        make_assertions(__command(script)?, "foo");
 
-        assert_eq!(__command(script)?, (0, String::from("foo")));
-
-        temp_dir.close()?;
-        Ok(())
+        Ok(temp_dir.close()?)
     }
 
     #[test]
@@ -112,63 +157,46 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().to_str().unwrap();
         let message = "hi from within the script!";
-
         let script = format!(
-            "cd {}; echo -n \"echo -n '{}'\" > bar.sh; chmod u+x bar.sh; ./bar.sh;",
-            path, message
+            "cd {path}; echo -n \"echo -n '{message}'\" > bar.sh; chmod u+x bar.sh; ./bar.sh;"
         );
 
-        assert_eq!(__command(script)?, (0, String::from(message)));
+        make_assertions(__command(script)?, message);
 
-        temp_dir.close()?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_raw_script() -> Result<(), RashError> {
-        const PRETTY_TRIANGLE_SCRIPT: &str = r#"
-        s="*"
-        for i in {1..3}; do
-            echo "$s"
-            s="$s *"
-        done;
-        "#;
-
-        assert_eq!(__command(PRETTY_TRIANGLE_SCRIPT)?, (0, String::from("*\n* *\n* * *\n")));
-        Ok(())
+        Ok(temp_dir.close()?)
     }
 
     #[test]
     fn test_quotes() -> Result<(), RashError> {
-        assert_eq!(
-            __command("echo -n 'a new line \n a day keeps the doctors away'")?,
-            (0, String::from("a new line \n a day keeps the doctors away"))
-        );
-        assert_eq!(
-            __command("\"\"echo -n 'blah' \'blah\' 'blah'''")?,
-            (0, String::from("blah blah blah"))
-        );
-        assert_eq!(__command("echo hello world")?, (0, String::from("hello world\n")));
+        let message = "a new line \n a day keeps the doctors away";
+        make_assertions(__command(format!("echo -n '{}'", message))?, message);
+
+        let message = "\"\"'blah' \'blah\' 'blah'''";
+        let expected = "blah blah blah";
+        make_assertions(__command(format!("echo -n {}", message))?, expected);
+
+        let message = "hello world";
+        let expected = "hello world\n";
+        make_assertions(__command(format!("echo {}", message))?, expected);
         Ok(())
     }
 
     #[test]
     fn test_comments() -> Result<(), RashError> {
-        assert_eq!(__command("#echo 'i am silent'")?, (0, String::from("")));
-        Ok(())
+        Ok(make_assertions(__command("#echo 'i am silent'")?, EMPTY_STRING.as_ref()))
     }
 
     #[test]
     fn test_backslashes() -> Result<(), RashError> {
-        assert_eq!(
-            __command(
-                "echo \
+        let c = "echo \
         -n \
         hi \
-        there"
-            )?,
-            (0, String::from("hi there"))
-        );
-        Ok(())
+        there";
+
+        Ok(make_assertions(__command(c)?, "hi there"))
+    }
+
+    fn make_assertions(o: Out, expected_stdout: &str) -> () {
+        assert_eq!(o, (0, expected_stdout.to_string(), EMPTY_STRING.clone()))
     }
 }

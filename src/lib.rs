@@ -48,7 +48,7 @@
 //!```
 //! use rsbash::rash;
 //!
-//! let (ret_val, stdout) = rash!("echo 'Hello world!' | grep 'Hello'").unwrap();
+//! let (ret_val, stdout, stderr) = rash!("echo 'Hello world!' | grep 'Hello'").unwrap();
 //! assert_eq!(stdout, "Hello world!\n");
 //! ```
 //!
@@ -86,9 +86,10 @@ mod wrapper;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn simple() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!("echo -n 'Hello world!'")?;
+///     let (ret_val, stdout, stderr) = rash!("echo -n 'Hello world!'")?;
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, "Hello world!");
+///     assert_eq!(stderr, "");
 ///     Ok(())
 /// }
 /// ```
@@ -98,10 +99,11 @@ mod wrapper;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn less_simple() -> Result<(), RashError> {
-///     let (ret_val, stdout) =
+///     let (ret_val, stdout, stderr) =
 ///         rash!("echo -n 'Hello ' | cat - && printf '%s' $(echo -n 'world!')")?;
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, "Hello world!");
+///     assert_eq!(stderr, "");
 ///     Ok(())
 /// }
 /// ```
@@ -118,13 +120,14 @@ mod wrapper;
 /// pub fn with_formatting() -> anyhow::Result<()> {
 ///     let dir = TempDir::new()?;
 ///     let path = dir.path().to_str().unwrap();
-///     let (ret_val, stdout) = rash!(
+///     let (ret_val, stdout, stderr) = rash!(
 ///        "cd {path}; echo -n \"echo -n '{msg}'\" > foo.sh; chmod u+x foo.sh; ./foo.sh;",
 ///        msg = MESSAGE
 ///     )?;
 ///
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, MESSAGE);
+///     assert_eq!(stderr, "");
 ///     Ok(())
 /// }
 /// ```
@@ -150,12 +153,13 @@ mod wrapper;
 /// * * *"#;
 ///
 /// pub fn non_string_literals() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!("{}", SCRIPT)?;
+///     let (ret_val, stdout, stderr) = rash!("{}", SCRIPT)?;
 ///     assert_eq!(ret_val, 0);
-///     assert_eq!(stdout, OUTPUT);   
+///     assert_eq!(stdout, OUTPUT);
+///     assert_eq!(stderr, "");
 ///  
 ///     let string = String::from("echo -n 'Be sure to format me appropriately!'");
-///     Ok(assert_eq!(rash!("{}", string)?, (0, "Be sure to format me appropriately!".to_string())))
+///     Ok(assert_eq!(rash!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "")))
 /// }
 /// ```
 ///
@@ -165,7 +169,7 @@ mod wrapper;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn wrong_type() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!(35345)?;  // format argument must be a string literal
+///     let (ret_val, stdout, stderr) = rash!(35345)?; // format argument must be a string literal
 ///     Ok(())
 /// }
 /// ```
@@ -175,7 +179,7 @@ mod wrapper;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn no_args() -> Result<(), RashError> {
-///     let (ret_val, stdout) = rash!()?;      // "requires at least a format string argument"
+///     let (ret_val, stdout, stderr) = rash!()?;     // "requires at least a format string argument"
 ///     Ok(())
 /// }
 /// ```
@@ -190,7 +194,7 @@ mod wrapper;
 ///
 /// pub fn vulnerability() -> Result<(), RashError> {
 ///     let untrustworthy_user = "";                       // Suppose untrustworthy_user was set to "; reboot;"
-///     let (ret_val, stdout) =                            // Uh oh! The command would have been formatted into
+///     let (ret_val, stdout, stderr) =                    // Uh oh! The command would have been formatted into
 ///         rash!("echo -n Hello {untrustworthy_user}")?;  // "echo -n Hello; reboot";
 ///     Ok(())
 /// }
@@ -213,15 +217,19 @@ mod test {
 
     const COMMAND: &'static str = "echo -n hi";
 
+    lazy_static! {
+        static ref EMPTY_STRING: String = String::default();
+    }
+
     #[test]
     fn test_rash_with_a_single_string_literal() -> Result<(), RashError> {
-        Ok(assert_eq!(rash!("echo -n hi")?, (0, "hi".to_string())))
+        Ok(assert_eq!(rash!("echo -n hi")?, (0, "hi".to_string(), EMPTY_STRING.clone())))
     }
 
     #[test]
     fn test_rash_with_non_string_literals() -> Result<(), RashError> {
         let command = "echo -n hi".to_string();
-        let expected = (0, "hi".to_string());
+        let expected = (0, "hi".to_string(), EMPTY_STRING.clone());
 
         assert_eq!(rash!("{}", command)?, expected);
         assert_eq!(rash!("{}", COMMAND)?, expected);
@@ -230,7 +238,7 @@ mod test {
 
     #[test]
     fn test_rash_with_simple_formatting() -> Result<(), RashError> {
-        let expected = (0, "hi bye".to_string());
+        let expected = (0, "hi bye".to_string(), EMPTY_STRING.clone());
         assert_eq!(rash!("echo -n {} {}", "hi", "bye")?, expected);
 
         let hi = "hi";
@@ -241,7 +249,10 @@ mod test {
     #[test]
     fn test_rash_with_variable_capture_formatting() -> Result<(), RashError> {
         let (one, two) = (1, 2);
-        Ok(assert_eq!(rash!("echo -n '{one} + {two}'")?, (0, "1 + 2".to_string())))
+        Ok(assert_eq!(
+            rash!("echo -n '{one} + {two}'")?,
+            (0, "1 + 2".to_string(), EMPTY_STRING.clone())
+        ))
     }
 
     #[test]
@@ -249,7 +260,7 @@ mod test {
         let (one, three) = (1, 3);
         Ok(assert_eq!(
             rash!("echo -n '{one} + {two} + {three}'", two = 2)?,
-            (0, "1 + 2 + 3".to_string())
+            (0, "1 + 2 + 3".to_string(), EMPTY_STRING.clone())
         ))
     }
 }

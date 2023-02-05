@@ -35,6 +35,16 @@ pub enum RashError {
     FailedToReadStdout {
         message: String,
     },
+    /// We couldn't obtain stderr.
+    /// This can occur if the stderr is not valid UTF-8
+    /// or for any standard IO error kind.
+    ///
+    /// If this error is thrown, the error message will be the error message
+    /// given by calling `to_string()` on the source error.
+    #[error("Couldn't read stderr: {:?}", message)]
+    FailedToReadStderr {
+        message: String,
+    },
 }
 
 impl RashError {
