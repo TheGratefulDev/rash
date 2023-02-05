@@ -1,6 +1,5 @@
-use std::ffi::CString;
-
 use libc::{c_char, c_int, FILE, WEXITSTATUS, WIFEXITED};
+use std::ffi::CString;
 
 use crate::RashError;
 
@@ -134,11 +133,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::CString, mem::transmute, sync::Mutex};
-
     use libc::{c_char, c_int, FILE};
     use once_cell::sync::Lazy;
     use rstest::{fixture, rstest};
+    use std::{ffi::CString, mem::transmute, sync::Mutex};
 
     use crate::{error::RashError, utils::format_command_as_c_string};
 
@@ -182,15 +180,15 @@ mod tests {
     }
 
     #[fixture]
-    fn checked_libc_wrapper() -> impl CheckedLibCWrapper {
+    fn wrapper() -> impl CheckedLibCWrapper {
         CheckedLibCWrapperImpl::new(NullLibCWrapper {})
     }
 
     #[rstest]
     fn test_popen_returns_error_when_libc_popen_returns_a_null_ptr(
-        checked_libc_wrapper: impl CheckedLibCWrapper,
+        wrapper: impl CheckedLibCWrapper,
     ) -> Result<(), RashError> {
-        let result = unsafe { checked_libc_wrapper.popen(format_command_as_c_string("hi")?) };
+        let result = unsafe { wrapper.popen(format_command_as_c_string("hi")?) };
         assert!(result.is_err());
         assert_eq!(
             result,
@@ -252,9 +250,9 @@ mod tests {
             delegate: NullLibCWrapper {},
         };
 
-        let checked_libc_wrapper = CheckedLibCWrapperImpl::new(delegate);
+        let wrapper = CheckedLibCWrapperImpl::new(delegate);
 
-        let result = unsafe { checked_libc_wrapper.dup_fd(std::ptr::null_mut()) };
+        let result = unsafe { wrapper.dup_fd(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(*PCLOSE_CALLED_TIMES.lock().unwrap(), 1);
         assert_eq!(
@@ -268,10 +266,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dup2_returns_error_when_libc_dup2_returns_minus_one(
-        checked_libc_wrapper: impl CheckedLibCWrapper,
-    ) {
-        let result = unsafe { checked_libc_wrapper.dup2(5 as c_int, 5 as c_int) };
+    fn test_dup2_returns_error_when_libc_dup2_returns_minus_one(wrapper: impl CheckedLibCWrapper) {
+        let result = unsafe { wrapper.dup2(5 as c_int, 5 as c_int) };
         assert!(result.is_err());
         assert_eq!(
             result,
@@ -285,9 +281,9 @@ mod tests {
 
     #[rstest]
     fn test_pclose_returns_error_when_libc_pclose_returns_minus_one(
-        checked_libc_wrapper: impl CheckedLibCWrapper,
+        wrapper: impl CheckedLibCWrapper,
     ) {
-        let result = unsafe { checked_libc_wrapper.pclose(std::ptr::null_mut()) };
+        let result = unsafe { wrapper.pclose(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(
             result,
@@ -301,9 +297,9 @@ mod tests {
 
     #[rstest]
     fn test_get_process_return_code_returns_error_if_wifexited_is_false(
-        checked_libc_wrapper: impl CheckedLibCWrapper,
+        wrapper: impl CheckedLibCWrapper,
     ) {
-        let result = checked_libc_wrapper.get_process_return_code(128 + 1 as c_int);
+        let result = wrapper.get_process_return_code(128 + 1 as c_int);
         assert!(result.is_err());
         assert_eq!(
             result,
