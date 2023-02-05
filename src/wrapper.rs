@@ -12,6 +12,7 @@ pub(crate) trait LibCWrapper {
     unsafe fn popen(&self, command: *const c_char) -> *mut FILE;
     unsafe fn fileno(&self, stream: *mut FILE) -> c_int;
     unsafe fn dup(&self, fd: c_int) -> c_int;
+    unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int;
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int;
     unsafe fn __errno_location(&self) -> *mut c_int;
     unsafe fn strerror(&self, n: c_int) -> *mut c_char;
@@ -32,6 +33,10 @@ impl LibCWrapper for LibCWrapperImpl {
         libc::dup(fd)
     }
 
+    unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
+        libc::dup2(src, dst)
+    }
+
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
         libc::pclose(stream)
     }
@@ -48,6 +53,7 @@ impl LibCWrapper for LibCWrapperImpl {
 pub(crate) trait CheckedLibCWrapper {
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError>;
     unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError>;
+    unsafe fn dup2(&self, src: c_int, dst: c_int) -> Result<(), RashError>;
     unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError>;
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError>;
 }
@@ -98,6 +104,15 @@ where
         };
     }
 
+    unsafe fn dup2(&self, src: c_int, dst: c_int) -> Result<(), RashError> {
+        let fd = self.delegate.dup2(src, dst);
+        return if fd == -1 {
+            Err(self.kernel_error("The call to dup2 returned -1"))
+        } else {
+            Ok(())
+        };
+    }
+
     unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError> {
         let fd = self.delegate.dup(self.delegate.fileno(stream));
         return if fd == -1 {
@@ -143,6 +158,10 @@ mod tests {
         }
 
         unsafe fn dup(&self, _fd: c_int) -> c_int {
+            -1 as c_int
+        }
+
+        unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
             -1 as c_int
         }
 
@@ -211,6 +230,10 @@ mod tests {
                 self.delegate.dup(fd)
             }
 
+            unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
+                self.delegate.dup2(src, dst)
+            }
+
             unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
                 *PCLOSE_CALLED_TIMES.lock().unwrap() += 1;
                 self.delegate.pclose(stream)
@@ -239,6 +262,22 @@ mod tests {
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: \
                 The call to dup returned -1, strerror output: Hello."
+                    .to_string()
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_dup2_returns_error_when_libc_dup2_returns_minus_one(
+        checked_libc_wrapper: impl CheckedLibCWrapper,
+    ) {
+        let result = unsafe { checked_libc_wrapper.dup2(5 as c_int, 5 as c_int) };
+        assert!(result.is_err());
+        assert_eq!(
+            result,
+            Err(RashError::KernelError {
+                message: "Received errno 7, Description: \
+                The call to dup2 returned -1, strerror output: Hello."
                     .to_string()
             })
         );

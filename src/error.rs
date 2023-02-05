@@ -88,6 +88,10 @@ mod tests {
             libc::dup(fd)
         }
 
+        unsafe fn dup2(&self, src: c_int, dst: c_int) -> c_int {
+            libc::dup2(src, dst)
+        }
+
         unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
             libc::pclose(stream)
         }
