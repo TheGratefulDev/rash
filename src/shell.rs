@@ -1,12 +1,5 @@
-use libc::{c_char, close, fclose, fdopen, fflush};
-use std::{
-    ffi::CString,
-    fs::File,
-    io::Read,
-    os::{fd::AsRawFd, unix::io::FromRawFd},
-    str,
-};
-use tempfile::tempfile;
+use libc::fclose;
+use std::{ffi::CString, fs::File, os::unix::io::FromRawFd, str};
 
 use crate::{
     error::RashError,

@@ -1,10 +1,13 @@
-use libc::{c_char, c_int, FILE, WEXITSTATUS, WIFEXITED};
+use libc::{_exit, c_char, c_int, close, dup, execl, fork, pipe, FILE, WEXITSTATUS, WIFEXITED};
 use std::ffi::CString;
 
 use crate::RashError;
 
 lazy_static! {
     static ref READ_MODE: CString = CString::new("r").unwrap();
+    static ref SHELL_PATH: CString = CString::new("/bin/sh").unwrap();
+    static ref SH: CString = CString::new("sh").unwrap();
+    static ref COMMAND: CString = CString::new("-c").unwrap();
 }
 
 pub(crate) trait LibCWrapper {
@@ -131,12 +134,82 @@ where
     }
 }
 
+pub(crate) unsafe fn epopen(command: CString, fds: &mut [c_int; 3]) -> c_int {
+    let mut in_fds: [c_int; 2] = [-1, -1];
+    let mut out_fds: [c_int; 2] = [-1, -1];
+    let mut err_fds: [c_int; 2] = [-1, -1];
+
+    unsafe fn close_pipe(fds: &[c_int; 2]) {
+        close(fds[0]);
+        close(fds[1]);
+    }
+
+    let in_ret: c_int = pipe(in_fds.as_mut_ptr());
+    if in_ret < 0 {
+        return -1 as c_int;
+    }
+
+    let out_ret: c_int = pipe(out_fds.as_mut_ptr());
+    if out_ret < 0 {
+        close_pipe(&in_fds);
+        return -1 as c_int;
+    }
+
+    let err_ret: c_int = pipe(err_fds.as_mut_ptr());
+    if err_ret < 0 {
+        close_pipe(&out_fds);
+        close_pipe(&in_fds);
+        return -1 as c_int;
+    }
+
+    match fork() {
+        -1 => {
+            close_pipe(&err_fds);
+            close_pipe(&out_fds);
+            close_pipe(&in_fds);
+            return -1 as c_int;
+        }
+        0 => {
+            close(in_fds[1]);
+            close(out_fds[0]);
+            close(err_fds[0]);
+
+            close(0);
+            dup(in_fds[0]);
+
+            close(1);
+            dup(out_fds[1]);
+
+            close(2);
+            dup(err_fds[1]);
+
+            execl(
+                SHELL_PATH.as_ptr(),
+                SH.as_ptr(),
+                COMMAND.as_ptr(),
+                command.as_ptr(),
+                std::ptr::null() as *const c_char,
+            );
+            _exit(1);
+        }
+        pid => {
+            close(in_fds[0]);
+            close(out_fds[1]);
+            close(err_fds[1]);
+            fds[0] = in_fds[1];
+            fds[1] = out_fds[0];
+            fds[2] = err_fds[0];
+            return pid;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use libc::{c_char, c_int, FILE};
     use once_cell::sync::Lazy;
     use rstest::{fixture, rstest};
-    use std::{ffi::CString, mem::transmute, sync::Mutex};
+    use std::{ffi::CString, fs::File, io::Read, mem::transmute, os::fd::FromRawFd, sync::Mutex};
 
     use crate::{error::RashError, utils::format_command_as_c_string};
 
@@ -182,6 +255,35 @@ mod tests {
     #[fixture]
     fn wrapper() -> impl CheckedLibCWrapper {
         CheckedLibCWrapperImpl::new(NullLibCWrapper {})
+    }
+
+    #[test]
+    fn test_epopen_writes_to_stdout_with_simple_command() -> () {
+        let mut fds: [c_int; 3] = [-1, -1, -1];
+        unsafe {
+            assert!(epopen(CString::new("echo -n hi").unwrap(), &mut fds) > 0);
+            assert_eq!(read_from_fd(fds[1]), "hi".to_string());
+        }
+    }
+
+    #[test]
+    fn test_epopen_writes_to_stderr_with_simple_command() -> () {
+        let mut fds: [c_int; 3] = [-1, -1, -1];
+        unsafe {
+            assert!(epopen(CString::new("echo -n hi >&2").unwrap(), &mut fds) > 0);
+            assert_eq!(read_from_fd(fds[2]), "hi".to_string());
+        }
+    }
+
+    #[test]
+    fn test_epopen_writes_to_stdout_with_bash_command() -> () {
+        let mut fds: [c_int; 3] = [-1, -1, -1];
+        unsafe {
+            assert!(
+                epopen(CString::new("/usr/bin/env bash -c 'echo -n hi'").unwrap(), &mut fds) > 0
+            );
+            assert_eq!(read_from_fd(fds[1]), "hi".to_string());
+        }
     }
 
     #[rstest]
@@ -309,5 +411,12 @@ mod tests {
                     .to_string()
             })
         );
+    }
+
+    unsafe fn read_from_fd(fd: c_int) -> String {
+        let mut file = File::from_raw_fd(fd);
+        let mut buffer = String::new();
+        file.read_to_string(&mut buffer).unwrap();
+        buffer
     }
 }
