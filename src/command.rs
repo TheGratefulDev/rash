@@ -14,6 +14,10 @@ impl BashCommand {
         })
     }
 
+    pub fn command(&self) -> CString {
+        self.command.clone()
+    }
+
     pub fn as_ptr(&self) -> *const c_char {
         self.command.clone().as_ptr()
     }
@@ -45,5 +49,11 @@ mod tests {
         let input = "\"\"'blah' \'blah\' 'blah'''";
         let expected = "'\"\"'\\''blah'\\'' '\\''blah'\\'' '\\''blah'\\'''\\'''\\'''";
         assert_eq!(BashCommand::quote(input), expected.to_string());
+    }
+
+    #[test]
+    fn test_bash_command_formats_cstring_correctly() -> anyhow::Result<()> {
+        let command = BashCommand::new("hello")?.command();
+        Ok(assert_eq!(command.into_string()?, "/usr/bin/env bash -c hello".to_string()))
     }
 }
