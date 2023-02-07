@@ -1,16 +1,9 @@
-use libc::fclose;
-use std::{
-    ffi::{c_int, CString},
-    fs::File,
-    os::unix::io::FromRawFd,
-    str,
-};
-
 use crate::{
     error::RashError,
     utils,
     wrapper::{CheckedLibCWrapper, CheckedLibCWrapperImpl, LibCWrapperImpl},
 };
+use std::{ffi::c_int, fs::File, os::unix::io::FromRawFd, str};
 
 type Out = (i32, String, String);
 

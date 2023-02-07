@@ -58,6 +58,7 @@ extern crate lazy_static;
 
 pub use crate::error::RashError;
 
+mod command;
 mod error;
 mod process;
 #[doc(hidden)]
