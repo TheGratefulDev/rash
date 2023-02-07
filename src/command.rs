@@ -1,4 +1,3 @@
-use libc::c_char;
 use std::ffi::CString;
 
 #[derive(Debug)]
@@ -16,10 +15,6 @@ impl BashCommand {
 
     pub fn command(&self) -> CString {
         self.command.clone()
-    }
-
-    pub fn as_ptr(&self) -> *const c_char {
-        self.command.clone().as_ptr()
     }
 
     fn format(s: String) -> String {

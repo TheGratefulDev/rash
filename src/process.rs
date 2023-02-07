@@ -1,7 +1,10 @@
 use libc::{_exit, c_char, c_int, close, dup, execl, fork, pipe, waitpid, WEXITSTATUS, WIFEXITED};
 use std::{ffi::CString, fs::File, io::Read, os::fd::FromRawFd};
 
+use crate::command::BashCommand;
+
 lazy_static! {
+    // TODO: Handle these unwraps.
     static ref SHELL_PATH: CString = CString::new("/bin/sh").unwrap();
     static ref SH: CString = CString::new("sh").unwrap();
     static ref COMMAND: CString = CString::new("-c").unwrap();
@@ -20,7 +23,7 @@ impl Process {
         }
     }
 
-    pub(crate) unsafe fn open(&mut self, command: CString) -> c_int {
+    pub(crate) unsafe fn open(&mut self, command: BashCommand) -> c_int {
         let mut in_fds: [c_int; 2] = [-1, -1];
         let mut out_fds: [c_int; 2] = [-1, -1];
         let mut err_fds: [c_int; 2] = [-1, -1];
@@ -73,7 +76,7 @@ impl Process {
                     SHELL_PATH.as_ptr(),
                     SH.as_ptr(),
                     COMMAND.as_ptr(),
-                    command.as_ptr(),
+                    command.command().as_ptr(),
                     std::ptr::null() as *const c_char,
                 );
                 _exit(1);
@@ -121,14 +124,12 @@ impl Process {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
-
-    use super::Process;
+    use super::{BashCommand, Process};
 
     #[test]
     fn test_process_with_no_output() -> () {
         let mut process = Process::new();
-        let command = CString::new("exit 23").unwrap();
+        let command = BashCommand::new("exit 23").unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "".to_string());
@@ -140,7 +141,7 @@ mod tests {
     #[test]
     fn test_process_with_simple_command() -> () {
         let mut process = Process::new();
-        let command = CString::new("echo -n hi").unwrap();
+        let command = BashCommand::new("echo -n hi").unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "hi".to_string());
@@ -152,7 +153,7 @@ mod tests {
     #[test]
     fn test_process_with_stderr() -> () {
         let mut process = Process::new();
-        let command = CString::new("echo -n hi >&2").unwrap();
+        let command = BashCommand::new("echo -n hi >&2").unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "".to_string());
@@ -164,7 +165,7 @@ mod tests {
     #[test]
     fn test_process_with_both_stdout_and_stderr() -> () {
         let mut process = Process::new();
-        let command = CString::new("echo -n hi && echo -n bye >&2").unwrap();
+        let command = BashCommand::new("echo -n hi && echo -n bye >&2").unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "hi".to_string());
@@ -176,7 +177,7 @@ mod tests {
     #[test]
     fn test_process_with_non_zero_return_code() -> () {
         let mut process = Process::new();
-        let command = CString::new("echo -n hi; exit 4;").unwrap();
+        let command = BashCommand::new("echo -n hi; exit 4;").unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "hi".to_string());
@@ -186,10 +187,11 @@ mod tests {
     }
 
     #[test]
-    fn test_process_with_bash_command() -> () {
+    fn test_process_with_inner_bash_command() -> () {
         let mut process = Process::new();
         let command =
-            CString::new("/usr/bin/env bash -c 'echo -n hi; echo -n bye >&2 && exit 55;'").unwrap();
+            BashCommand::new("/usr/bin/env bash -c 'echo -n hi; echo -n bye >&2 && exit 55;'")
+                .unwrap();
         unsafe {
             assert!(process.open(command) > 0);
             assert_eq!(process.stdout(), "hi".to_string());
