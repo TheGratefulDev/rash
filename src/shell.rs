@@ -1,5 +1,10 @@
 use libc::fclose;
-use std::{ffi::CString, fs::File, os::unix::io::FromRawFd, str};
+use std::{
+    ffi::{c_int, CString},
+    fs::File,
+    os::unix::io::FromRawFd,
+    str,
+};
 
 use crate::{
     error::RashError,
@@ -23,22 +28,9 @@ where
 
     let run_process = move |wrapper: &W| -> Result<(File, File, i32), RashError> {
         let (stdout, stderr, process_exit_status) = unsafe {
-            let filename = CString::new("foo").unwrap();
-            let mode = CString::new("w+").unwrap();
-            let stderr_fh = libc::fopen(filename.as_ptr(), mode.as_ptr());
-            println!("Old stderr fd = {fd}", fd = libc::fileno(stderr_fh));
-            let stderr_fd = libc::dup2(libc::fileno(stderr_fh), 2 as libc::c_int);
-            println!("New stderr fd = {fd}", fd = stderr_fd);
-            fclose(stderr_fh);
-
-            let stdout_fh = wrapper.popen(command_as_c_string)?;
-            let stdout_fd = wrapper.dup_fd(stdout_fh)?;
-            println!("New stdout fd = {fd}", fd = stdout_fd);
-            let process_exit_status = wrapper.pclose(stdout_fh)?;
-
-            let stderr = File::from_raw_fd(stderr_fd);
-            let stdout = File::from_raw_fd(stdout_fd);
-            (stdout, stderr, process_exit_status)
+            let stderr = File::from_raw_fd(1 as c_int);
+            let stdout = File::from_raw_fd(2 as c_int);
+            (stdout, stderr, 7 as c_int)
         };
         let return_code = wrapper.get_process_return_code(process_exit_status)?;
         Ok((stdout, stderr, return_code))

@@ -1,4 +1,4 @@
-use libc::{_exit, c_char, c_int, close, dup, execl, fork, pipe, FILE, WEXITSTATUS, WIFEXITED};
+use libc::{c_char, c_int, FILE, WEXITSTATUS, WIFEXITED};
 use std::ffi::CString;
 
 use crate::RashError;
@@ -14,7 +14,6 @@ pub(crate) trait LibCWrapper {
     unsafe fn popen(&self, command: *const c_char) -> *mut FILE;
     unsafe fn fileno(&self, stream: *mut FILE) -> c_int;
     unsafe fn dup(&self, fd: c_int) -> c_int;
-    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int;
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int;
     unsafe fn __errno_location(&self) -> *mut c_int;
     unsafe fn strerror(&self, n: c_int) -> *mut c_char;
@@ -35,10 +34,6 @@ impl LibCWrapper for LibCWrapperImpl {
         libc::dup(fd)
     }
 
-    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int {
-        libc::dup2(oldfd, newfd)
-    }
-
     unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
         libc::pclose(stream)
     }
@@ -55,8 +50,7 @@ impl LibCWrapper for LibCWrapperImpl {
 pub(crate) trait CheckedLibCWrapper {
     unsafe fn popen(&self, command: CString) -> Result<*mut FILE, RashError>;
     unsafe fn pclose(&self, c_stream: *mut FILE) -> Result<c_int, RashError>;
-    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> Result<(), RashError>;
-    unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError>;
+    unsafe fn dup_fileno(&self, stream: *mut FILE) -> Result<c_int, RashError>;
     fn get_process_return_code(&self, process_exit_status: c_int) -> Result<i32, RashError>;
 }
 
@@ -106,16 +100,7 @@ where
         };
     }
 
-    unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> Result<(), RashError> {
-        let fd = self.delegate.dup2(oldfd, newfd);
-        return if fd == -1 {
-            Err(self.kernel_error("The call to dup2 returned -1"))
-        } else {
-            Ok(())
-        };
-    }
-
-    unsafe fn dup_fd(&self, stream: *mut FILE) -> Result<c_int, RashError> {
+    unsafe fn dup_fileno(&self, stream: *mut FILE) -> Result<c_int, RashError> {
         let fd = self.delegate.dup(self.delegate.fileno(stream));
         return if fd == -1 {
             self.delegate.pclose(stream);
@@ -135,6 +120,7 @@ where
 }
 
 pub(crate) unsafe fn epopen(command: CString, fds: &mut [c_int; 3]) -> c_int {
+    use libc::{_exit, close, dup, execl, fork, pipe};
     let mut in_fds: [c_int; 2] = [-1, -1];
     let mut out_fds: [c_int; 2] = [-1, -1];
     let mut err_fds: [c_int; 2] = [-1, -1];
@@ -232,10 +218,6 @@ mod tests {
             -1 as c_int
         }
 
-        unsafe fn dup2(&self, _oldfd: c_int, _newfd: c_int) -> c_int {
-            -1 as c_int
-        }
-
         unsafe fn pclose(&self, _stream: *mut FILE) -> c_int {
             -1 as c_int
         }
@@ -286,6 +268,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_epopen_writes_to_both_stdout_and_stderr_with_bash_command() -> () {
+        let mut fds: [c_int; 3] = [-1, -1, -1];
+        unsafe {
+            assert!(
+                epopen(
+                    CString::new("/usr/bin/env bash -c 'echo -n hi && echo -n bye >&2'").unwrap(),
+                    &mut fds
+                ) > 0
+            );
+            assert_eq!(read_from_fd(fds[1]), "hi".to_string());
+            assert_eq!(read_from_fd(fds[2]), "bye".to_string());
+        }
+    }
+
     #[rstest]
     fn test_popen_returns_error_when_libc_popen_returns_a_null_ptr(
         wrapper: impl CheckedLibCWrapper,
@@ -330,10 +327,6 @@ mod tests {
                 self.delegate.dup(fd)
             }
 
-            unsafe fn dup2(&self, oldfd: c_int, newfd: c_int) -> c_int {
-                self.delegate.dup2(oldfd, newfd)
-            }
-
             unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
                 *PCLOSE_CALLED_TIMES.lock().unwrap() += 1;
                 self.delegate.pclose(stream)
@@ -354,7 +347,7 @@ mod tests {
 
         let wrapper = CheckedLibCWrapperImpl::new(delegate);
 
-        let result = unsafe { wrapper.dup_fd(std::ptr::null_mut()) };
+        let result = unsafe { wrapper.dup_fileno(std::ptr::null_mut()) };
         assert!(result.is_err());
         assert_eq!(*PCLOSE_CALLED_TIMES.lock().unwrap(), 1);
         assert_eq!(
@@ -362,20 +355,6 @@ mod tests {
             Err(RashError::KernelError {
                 message: "Received errno 7, Description: \
                 The call to dup returned -1, strerror output: Hello."
-                    .to_string()
-            })
-        );
-    }
-
-    #[rstest]
-    fn test_dup2_returns_error_when_libc_dup2_returns_minus_one(wrapper: impl CheckedLibCWrapper) {
-        let result = unsafe { wrapper.dup2(5 as c_int, 5 as c_int) };
-        assert!(result.is_err());
-        assert_eq!(
-            result,
-            Err(RashError::KernelError {
-                message: "Received errno 7, Description: \
-                The call to dup2 returned -1, strerror output: Hello."
                     .to_string()
             })
         );
