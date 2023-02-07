@@ -126,6 +126,18 @@ mod tests {
     use super::Process;
 
     #[test]
+    fn test_process_with_no_output() -> () {
+        let mut process = Process::new();
+        let command = CString::new("exit 23").unwrap();
+        unsafe {
+            assert!(process.open(command) > 0);
+            assert_eq!(process.stdout(), "".to_string());
+            assert_eq!(process.stderr(), "".to_string());
+            assert_eq!(process.close(), 23);
+        }
+    }
+
+    #[test]
     fn test_process_with_simple_command() -> () {
         let mut process = Process::new();
         let command = CString::new("echo -n hi").unwrap();
