@@ -63,8 +63,6 @@ mod error;
 mod process;
 #[doc(hidden)]
 pub mod shell;
-mod utils;
-mod wrapper;
 
 #[cfg(unix)]
 /// Run a bash command.
@@ -161,7 +159,7 @@ mod wrapper;
 ///     assert_eq!(stderr, "");
 ///  
 ///     let string = String::from("echo -n 'Be sure to format me appropriately!'");
-///     Ok(assert_eq!(rash!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "")))
+///     Ok(assert_eq!(rash!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "".to_string())))
 /// }
 /// ```
 ///
