@@ -1,8 +1,8 @@
-use std::ffi::CStr;
-
+use libc::{__errno_location, c_int};
+use std::{ffi::CStr, str::Utf8Error};
 use thiserror::Error;
 
-use crate::wrapper::LibCWrapper;
+use crate::process::ProcessError;
 
 /// The error thrown if something went wrong in the processing of the command.
 #[cfg(unix)]
@@ -47,79 +47,45 @@ pub enum RashError {
     },
 }
 
-impl RashError {
-    pub(crate) fn format_kernel_error_message<L, S>(wrapper: &L, description: S) -> String
-    where
-        L: LibCWrapper,
-        S: AsRef<str>,
-    {
-        let (errno, strerror) = unsafe {
-            let errno = *wrapper.__errno_location();
-            let ptr = wrapper.strerror(errno);
-            let strerror = match CStr::from_ptr(ptr).to_str() {
-                Ok(s) => s.to_string(),
-                Err(e) => e.to_string(),
-            };
-            (errno, strerror)
-        };
-
-        format!(
-            "Received errno {}, Description: {}, strerror output: {}.",
-            errno.to_string(),
-            description.as_ref(),
-            strerror
-        )
+impl From<ProcessError> for RashError {
+    fn from(value: ProcessError) -> Self {
+        fn into_kernel_error<S: AsRef<str>>(s: S) -> RashError {
+            RashError::KernelError {
+                message: unsafe { RashError::format_kernel_error_message(s) },
+            }
+        }
+        match value {
+            ProcessError::CouldNotFork => into_kernel_error("Couldn't fork."),
+            ProcessError::CouldNotCreatePipe => into_kernel_error("Couldn't create pipe."),
+            ProcessError::CouldNotDupFd(fd) => into_kernel_error(format!("Couldn't dup fd {fd}")),
+            ProcessError::OpenDidNotCloseNormally => {
+                into_kernel_error("process::open didn't close normally - WIFEXITED was false.")
+            }
+            ProcessError::CouldNotGetStderr => RashError::FailedToReadStderr,
+            ProcessError::CouldNotGetStdout => RashError::FailedToReadStdout,
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{ffi::CString, mem::transmute};
-
-    use libc::{c_char, c_int, FILE};
-
-    use super::*;
-
-    static mut HELLO: *const CString = 0 as *const CString;
-
-    struct MockLibCWrapper {}
-
-    impl LibCWrapper for MockLibCWrapper {
-        unsafe fn popen(&self, command: *const c_char) -> *mut FILE {
-            let read_mode = CString::new("r").unwrap();
-            libc::popen(command, read_mode.as_ptr())
-        }
-
-        unsafe fn fileno(&self, stream: *mut FILE) -> c_int {
-            libc::fileno(stream)
-        }
-
-        unsafe fn dup(&self, fd: c_int) -> c_int {
-            libc::dup(fd)
-        }
-
-        unsafe fn pclose(&self, stream: *mut FILE) -> c_int {
-            libc::pclose(stream)
-        }
-
-        unsafe fn __errno_location(&self) -> *mut c_int {
-            let b = Box::new(7);
-            Box::into_raw(b) as *mut c_int
-        }
-
-        unsafe fn strerror(&self, _n: c_int) -> *mut c_char {
-            let boxed = Box::new("Hello\0");
-            HELLO = transmute(boxed);
-            return (&*HELLO).as_ptr() as *mut c_char;
-        }
+impl RashError {
+    pub(crate) unsafe fn format_kernel_error_message<S: AsRef<str>>(description: S) -> String {
+        let errno = *__errno_location();
+        let strerror = Self::strerror(errno);
+        format!(
+            "Received errno {}, Description: {}, strerror output: {strerror}.",
+            errno.to_string(),
+            description.as_ref()
+        )
     }
 
-    #[test]
-    fn test_format_kernel_error_message_formats_correctly() {
-        let ref mock_wrapper = MockLibCWrapper {};
-        assert_eq!(
-            RashError::format_kernel_error_message(mock_wrapper, "My description"),
-            "Received errno 7, Description: My description, strerror output: Hello."
-        );
+    unsafe fn strerror(errno: c_int) -> String {
+        let strerror = libc::strerror(errno);
+        if strerror.is_null() {
+            String::from("Couldn't get strerror - libc::strerror returned null.")
+        }
+        return match CStr::from_ptr(strerror).to_str() {
+            Ok(s) => s.to_string(),
+            Err(e) => e.to_string(),
+        };
     }
 }
