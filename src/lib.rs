@@ -112,7 +112,7 @@ pub mod shell;
 /// Format `rash!` commands just like you would [`format!`](https://doc.rust-lang.org/stable/std/fmt/) strings normally!
 ///
 /// ```
-/// use rsbash::rash;
+/// use rsbash::rashf;
 /// use tempfile::TempDir;
 ///
 /// const MESSAGE: &'static str = "Hi from within foo.sh!";
@@ -120,7 +120,7 @@ pub mod shell;
 /// pub fn with_formatting() -> anyhow::Result<()> {
 ///     let dir = TempDir::new()?;
 ///     let path = dir.path().to_str().unwrap();
-///     let (ret_val, stdout, stderr) = rash!(
+///     let (ret_val, stdout, stderr) = rashf!(
 ///        "cd {path}; echo -n \"echo -n '{msg}'\" > foo.sh; chmod u+x foo.sh; ./foo.sh;",
 ///        msg = MESSAGE
 ///     )?;
@@ -136,8 +136,8 @@ pub mod shell;
 ///
 /// Similarly, use `rash!` with non-string literals just as you would [`format!`](https://doc.rust-lang.org/stable/std/fmt/).
 ///
-/// ```
-/// use rsbash::{rash, RashError};
+///```
+/// use rsbash::{rash, rashf, RashError};
 ///
 /// const SCRIPT: &'static str = r#"
 /// s="*"
@@ -153,13 +153,13 @@ pub mod shell;
 /// * * *"#;
 ///
 /// pub fn non_string_literals() -> Result<(), RashError> {
-///     let (ret_val, stdout, stderr) = rash!("{}", SCRIPT)?;
+///     let (ret_val, stdout, stderr) = rash!(SCRIPT)?;
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, OUTPUT);
 ///     assert_eq!(stderr, "");
 ///  
 ///     let string = String::from("echo -n 'Be sure to format me appropriately!'");
-///     Ok(assert_eq!(rash!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "".to_string())))
+///     Ok(assert_eq!(rashf!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "".to_string())))
 /// }
 /// ```
 ///
@@ -190,12 +190,12 @@ pub mod shell;
 /// that formatting bash commands in this manner exposes a vulnerability in the form of a SQL injection-like attack:
 ///
 /// ```
-/// use rsbash::{rash, RashError};
+/// use rsbash::{rashf, RashError};
 ///
 /// pub fn vulnerability() -> Result<(), RashError> {
 ///     let untrustworthy_user = "";                       // Suppose untrustworthy_user was set to "; reboot;"
 ///     let (ret_val, stdout, stderr) =                    // Uh oh! The command would have been formatted into
-///         rash!("echo -n Hello {untrustworthy_user}")?;  // "echo -n Hello; reboot";
+///         rashf!("echo -n Hello {untrustworthy_user}")?;  // "echo -n Hello; reboot";
 ///     Ok(())
 /// }
 /// ```
@@ -206,13 +206,20 @@ pub mod shell;
 ///
 #[macro_export]
 macro_rules! rash {
+    ($arg:expr) => {
+        $crate::shell::__command($arg)
+    };
+}
+
+#[macro_export]
+macro_rules! rashf {
     ($($arg:tt)*) => {
         $crate::shell::__command(format!($($arg)*))
     };
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::RashError;
 
     const COMMAND: &'static str = "echo -n hi";
@@ -221,46 +228,79 @@ mod test {
         static ref EMPTY_STRING: String = String::default();
     }
 
-    #[test]
-    fn test_rash_with_a_single_string_literal() -> Result<(), RashError> {
-        Ok(assert_eq!(rash!("echo -n hi")?, (0, "hi".to_string(), EMPTY_STRING.clone())))
+    mod rash {
+        use super::*;
+
+        #[test]
+        fn test_rash_with_a_single_string_literal() -> Result<(), RashError> {
+            Ok(assert_eq!(rash!("echo -n hi")?, (0, "hi".to_string(), EMPTY_STRING.clone())))
+        }
+
+        #[test]
+        fn test_rash_with_non_string_literals() -> Result<(), RashError> {
+            let command = "echo -n hi".to_string();
+            let expected = (0, "hi".to_string(), EMPTY_STRING.clone());
+
+            assert_eq!(rash!(command)?, expected);
+            assert_eq!(rash!(COMMAND)?, expected);
+            Ok(())
+        }
+
+        #[test]
+        fn test_rash_with_expressions() -> Result<(), RashError> {
+            let message = "echo -n hi";
+            let expected = (0, "hi".to_string(), EMPTY_STRING.clone());
+
+            assert_eq!(rash!(message.to_string())?, expected);
+            assert_eq!(rash!(format!("{message}"))?, expected);
+            Ok(())
+        }
     }
 
-    #[test]
-    fn test_rash_with_non_string_literals() -> Result<(), RashError> {
-        let command = "echo -n hi".to_string();
-        let expected = (0, "hi".to_string(), EMPTY_STRING.clone());
+    mod rashf {
+        use super::*;
 
-        assert_eq!(rash!("{}", command)?, expected);
-        assert_eq!(rash!("{}", COMMAND)?, expected);
-        Ok(())
-    }
+        #[test]
+        fn test_rashf_with_a_single_string_literal() -> Result<(), RashError> {
+            Ok(assert_eq!(rashf!("echo -n hi")?, (0, "hi".to_string(), EMPTY_STRING.clone())))
+        }
 
-    #[test]
-    fn test_rash_with_simple_formatting() -> Result<(), RashError> {
-        let expected = (0, "hi bye".to_string(), EMPTY_STRING.clone());
-        assert_eq!(rash!("echo -n {} {}", "hi", "bye")?, expected);
+        #[test]
+        fn test_rashf_with_formatted_non_string_literals() -> Result<(), RashError> {
+            let command = "echo -n hi".to_string();
+            let expected = (0, "hi".to_string(), EMPTY_STRING.clone());
 
-        let hi = "hi";
-        let bye = "bye".to_string();
-        Ok(assert_eq!(rash!("echo -n {} {}", hi, bye)?, expected))
-    }
+            assert_eq!(rashf!("{}", command)?, expected);
+            assert_eq!(rashf!("{}", COMMAND)?, expected);
+            Ok(())
+        }
 
-    #[test]
-    fn test_rash_with_variable_capture_formatting() -> Result<(), RashError> {
-        let (one, two) = (1, 2);
-        Ok(assert_eq!(
-            rash!("echo -n '{one} + {two}'")?,
-            (0, "1 + 2".to_string(), EMPTY_STRING.clone())
-        ))
-    }
+        #[test]
+        fn test_rashf_with_simple_formatting() -> Result<(), RashError> {
+            let expected = (0, "hi bye".to_string(), EMPTY_STRING.clone());
+            assert_eq!(rashf!("echo -n {} {}", "hi", "bye")?, expected);
 
-    #[test]
-    fn test_rash_with_positional_parameters() -> Result<(), RashError> {
-        let (one, three) = (1, 3);
-        Ok(assert_eq!(
-            rash!("echo -n '{one} + {two} + {three}'", two = 2)?,
-            (0, "1 + 2 + 3".to_string(), EMPTY_STRING.clone())
-        ))
+            let hi = "hi";
+            let bye = "bye".to_string();
+            Ok(assert_eq!(rashf!("echo -n {} {}", hi, bye)?, expected))
+        }
+
+        #[test]
+        fn test_rashf_with_variable_capture_formatting() -> Result<(), RashError> {
+            let (one, two) = (1, 2);
+            Ok(assert_eq!(
+                rashf!("echo -n '{one} + {two}'")?,
+                (0, "1 + 2".to_string(), EMPTY_STRING.clone())
+            ))
+        }
+
+        #[test]
+        fn test_rashf_with_positional_parameters() -> Result<(), RashError> {
+            let (one, three) = (1, 3);
+            Ok(assert_eq!(
+                rashf!("echo -n '{one} + {two} + {three}'", two = 2)?,
+                (0, "1 + 2 + 3".to_string(), EMPTY_STRING.clone())
+            ))
+        }
     }
 }
