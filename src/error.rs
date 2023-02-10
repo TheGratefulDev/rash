@@ -1,5 +1,5 @@
 use libc::{__errno_location, c_int};
-use std::{ffi::CStr, str::Utf8Error};
+use std::ffi::{CStr, NulError};
 use thiserror::Error;
 
 use crate::process::ProcessError;
@@ -13,9 +13,9 @@ pub enum RashError {
     ///
     /// If this error is thrown, the error message will contain the position
     /// of the null byte in the command.
-    #[error("Null byte in command: {:?}", message)]
+    #[error("Null byte found in command at pos {}", pos)]
     NullByteInCommand {
-        message: String,
+        pos: usize,
     },
     /// A system call failed.
     ///
@@ -48,21 +48,31 @@ pub enum RashError {
 }
 
 impl From<ProcessError> for RashError {
-    fn from(value: ProcessError) -> Self {
+    fn from(v: ProcessError) -> Self {
         fn into_kernel_error<S: AsRef<str>>(s: S) -> RashError {
             RashError::KernelError {
                 message: unsafe { RashError::format_kernel_error_message(s) },
             }
         }
-        match value {
-            ProcessError::CouldNotFork => into_kernel_error("Couldn't fork."),
-            ProcessError::CouldNotCreatePipe => into_kernel_error("Couldn't create pipe."),
-            ProcessError::CouldNotDupFd(fd) => into_kernel_error(format!("Couldn't dup fd {fd}")),
-            ProcessError::OpenDidNotCloseNormally => {
-                into_kernel_error("process::open didn't close normally - WIFEXITED was false.")
-            }
-            ProcessError::CouldNotGetStderr => RashError::FailedToReadStderr,
-            ProcessError::CouldNotGetStdout => RashError::FailedToReadStdout,
+        match v {
+            ProcessError::CouldNotFork => into_kernel_error(v.to_string()),
+            ProcessError::CouldNotCreatePipe => into_kernel_error(v.to_string()),
+            ProcessError::CouldNotDupFd(_) => into_kernel_error(v.to_string()),
+            ProcessError::OpenDidNotCloseNormally => into_kernel_error(v.to_string()),
+            ProcessError::CouldNotGetStderr => RashError::FailedToReadStderr {
+                message: v.to_string(),
+            },
+            ProcessError::CouldNotGetStdout => RashError::FailedToReadStdout {
+                message: v.to_string(),
+            },
+        }
+    }
+}
+
+impl From<NulError> for RashError {
+    fn from(v: NulError) -> Self {
+        RashError::NullByteInCommand {
+            pos: v.nul_position(),
         }
     }
 }
@@ -81,7 +91,7 @@ impl RashError {
     unsafe fn strerror(errno: c_int) -> String {
         let strerror = libc::strerror(errno);
         if strerror.is_null() {
-            String::from("Couldn't get strerror - libc::strerror returned null.")
+            return "Couldn't get strerror - libc::strerror returned null.".to_string();
         }
         return match CStr::from_ptr(strerror).to_str() {
             Ok(s) => s.to_string(),

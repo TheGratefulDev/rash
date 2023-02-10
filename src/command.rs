@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CString, NulError};
 
 #[derive(Debug)]
 pub(crate) struct BashCommand {
@@ -6,7 +6,7 @@ pub(crate) struct BashCommand {
 }
 
 impl BashCommand {
-    pub fn new<S: AsRef<str>>(s: S) -> anyhow::Result<Self> {
+    pub fn new<S: AsRef<str>>(s: S) -> Result<Self, NulError> {
         let quoted = BashCommand::quote(s.as_ref());
         Ok(Self {
             command: CString::new(BashCommand::format(quoted))?,
