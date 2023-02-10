@@ -117,11 +117,11 @@ impl Process {
     }
 
     pub(crate) unsafe fn stdout(&self) -> Result<String, ProcessError> {
-        Process::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout)
+        Self::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout)
     }
 
     pub(crate) unsafe fn stderr(&self) -> Result<String, ProcessError> {
-        Process::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr)
+        Self::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr)
     }
 
     unsafe fn read_from_fd(fd: c_int) -> anyhow::Result<String> {
