@@ -1,7 +1,7 @@
 //! **rsbash:** run bash commands from rust.
 //!
-//! Our macro [`rash!`](macro@rash) allows you to call out to a bash shell, just as you would typically from a terminal.
-//! Since this is accomplished by interacting with libc, [`rash!`](macro@rash) can only be used on unix-like platforms (Linux, macOS etc).
+//! Our macros [`rash!`](macro@rash) and [`rashf!`](macro@rashf) allow you to call out to a bash shell, just as you would typically from a terminal.
+//! Since this is accomplished by interacting with libc, these macros can only be used on unix-like platforms (Linux, macOS etc).
 //!
 //! ## Motivation
 //!
@@ -52,7 +52,7 @@
 //! assert_eq!(stdout, "Hello world!\n");
 //! ```
 //!
-//! See the [`rash!`](macro@rash) macro and [`RashError`](enum@RashError) for more information.
+//! See the [`rash!`](macro@rash) and [`rashf!`](macro@rashf) macros, and the [`RashError`](enum@RashError) for more information.
 #[macro_use]
 extern crate lazy_static;
 
@@ -64,19 +64,15 @@ mod process;
 #[doc(hidden)]
 pub mod shell;
 
-#[cfg(unix)]
 /// Run a bash command.
 ///
 /// #### Arguments:
-/// `rash!` expects at least a single argument of a string literal representing the command to run.
-/// Any further arguments should be formatting arguments to the command.
-///
-/// This syntax is the exact syntax of the well-known and well-loved `format!` macro, see [`std::fmt`](https://doc.rust-lang.org/stable/std/fmt/) for more details.
+/// `rash!` expects a single argument of a String or string literal (more specifically, any `AsRef<str>`).
 ///
 /// #### Returns:
-/// `rash!` returns a `Result<(i32, String), RashError>`.
+/// `rash!` returns a `Result<(i32, String, String), RashError>`.
 ///
-/// The `(i32, String)` tuple contains the **return value** and the **stdout** of the command, respectively.
+/// The `(i32, String, String)` tuple contains the **return value**, the **stdout** and the **stderr** of the command, respectively.
 ///
 /// See [`RashError`](enum@RashError) for more details of the error.
 ///
@@ -99,45 +95,18 @@ pub mod shell;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn less_simple() -> Result<(), RashError> {
-///     let (ret_val, stdout, stderr) =
+///     let (ret_val, stdout, _) =
 ///         rash!("echo -n 'Hello ' | cat - && printf '%s' $(echo -n 'world!')")?;
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, "Hello world!");
-///     assert_eq!(stderr, "");
-///     Ok(())
-/// }
-/// ```
-/// #### Using a formatted command:
-///
-/// Format `rash!` commands just like you would [`format!`](https://doc.rust-lang.org/stable/std/fmt/) strings normally!
-///
-/// ```
-/// use rsbash::rashf;
-/// use tempfile::TempDir;
-///
-/// const MESSAGE: &'static str = "Hi from within foo.sh!";
-///
-/// pub fn with_formatting() -> anyhow::Result<()> {
-///     let dir = TempDir::new()?;
-///     let path = dir.path().to_str().unwrap();
-///     let (ret_val, stdout, stderr) = rashf!(
-///        "cd {path}; echo -n \"echo -n '{msg}'\" > foo.sh; chmod u+x foo.sh; ./foo.sh;",
-///        msg = MESSAGE
-///     )?;
-///
-///     assert_eq!(ret_val, 0);
-///     assert_eq!(stdout, MESSAGE);
-///     assert_eq!(stderr, "");
 ///     Ok(())
 /// }
 /// ```
 ///
 /// #### Using non-string literals:
 ///
-/// Similarly, use `rash!` with non-string literals just as you would [`format!`](https://doc.rust-lang.org/stable/std/fmt/).
-///
 ///```
-/// use rsbash::{rash, rashf, RashError};
+/// use rsbash::{rash, RashError};
 ///
 /// const SCRIPT: &'static str = r#"
 /// s="*"
@@ -157,9 +126,94 @@ pub mod shell;
 ///     assert_eq!(ret_val, 0);
 ///     assert_eq!(stdout, OUTPUT);
 ///     assert_eq!(stderr, "");
-///  
-///     let string = String::from("echo -n 'Be sure to format me appropriately!'");
-///     Ok(assert_eq!(rashf!("{}", string)?, (0, "Be sure to format me appropriately!".to_string(), "".to_string())))
+///
+///     Ok(assert_eq!(rash!(String::from("echo hi >&2"))?, (0, "".to_string(), "hi".to_string())))
+/// }
+/// ```
+///
+/// # Compile errors
+/// #### Passing a non-string literal as an argument:
+/// ```compile_fail
+/// use rsbash::{rash, RashError};
+///
+/// pub fn wrong_type() -> Result<(), RashError> {
+///     let (ret_val, stdout, stderr) = rash!(35345)?;          // the trait `AsRef<str>` is not implemented for `{integer}`
+///     Ok(())
+/// }
+/// ```
+///
+/// #### Passing either no arguments, or more than one argument:
+/// ```compile_fail
+/// use rsbash::{rash, RashError};
+///
+/// pub fn wrong_arg_count() -> Result<(), RashError> {
+///     let (ret_val, stdout, stderr) = rash!()?;               // "missing tokens in macro arguments."
+///     let (ret_val, stdout, stderr) = rash!("blah", "blah")?; // "no rules expected this token in macro call."
+///     Ok(())
+/// }
+/// ```
+///
+#[cfg(unix)]
+#[macro_export]
+macro_rules! rash {
+    ($arg:expr) => {
+        $crate::shell::__command($arg)
+    };
+}
+
+/// Format and run a bash command.
+///
+/// #### Arguments:
+/// `rashf!` expects at least a single argument of a string literal representing the command to run.
+/// Any further arguments should be formatting arguments to the command.
+///
+/// This syntax is the exact syntax of the well-known and well-loved `format!` macro, see [`std::fmt`](https://doc.rust-lang.org/stable/std/fmt/) for more details.
+///
+/// #### Returns:
+/// `rashf!` returns a `Result<(i32, String, String), RashError>`.
+///
+/// The `(i32, String, String)` tuple contains the **return value**, the **stdout** and the **stderr** of the command, respectively.
+///
+/// See [`RashError`](enum@RashError) for more details of the error.
+///
+/// # Examples
+///
+/// #### Formatting:
+///
+/// Format `rashf!` commands just like you would [`format!`](https://doc.rust-lang.org/stable/std/fmt/) strings normally!
+///
+///```
+/// use rsbash::{rashf, RashError};
+///
+/// pub fn simple_formatting() -> Result<(), RashError> {
+///     let what = "Hello";
+///     let who = "world!";
+///     let (ret_val, stdout, stderr) = rashf!("echo -n '{} {}!'", what, who)?;
+///     assert_eq!(ret_val, 0);
+///     assert_eq!(stdout, "Hello world!");
+///     assert_eq!(stderr, "");
+///     Ok(())
+/// }
+/// ```
+///
+/// ```
+/// use rsbash::rashf;
+/// use tempfile::TempDir;
+///
+/// const MESSAGE: &'static str = "Hi from within foo.sh!";
+///
+/// pub fn formatting() -> anyhow::Result<()> {
+///     let dir = TempDir::new()?;
+///     let path = dir.path().to_str().unwrap();
+///     let (ret_val, stdout, stderr) = rashf!(
+///        "cd {path}; echo -n \"echo -n '{msg}'\" > foo.sh; chmod u+x foo.sh; ./foo.sh;",
+///        msg = MESSAGE
+///     )?;
+///
+///     assert_eq!(ret_val, 0);
+///     assert_eq!(stdout, MESSAGE);
+///     assert_eq!(stderr, "");
+///     Ok(())
 /// }
 /// ```
 ///
@@ -174,7 +228,7 @@ pub mod shell;
 /// }
 /// ```
 ///
-/// #### Passing either no arguments, or more than one argument:
+/// #### Passing no arguments:
 /// ```compile_fail
 /// use rsbash::{rash, RashError};
 ///
@@ -195,22 +249,16 @@ pub mod shell;
 /// pub fn vulnerability() -> Result<(), RashError> {
 ///     let untrustworthy_user = "";                       // Suppose untrustworthy_user was set to "; reboot;"
 ///     let (ret_val, stdout, stderr) =                    // Uh oh! The command would have been formatted into
-///         rashf!("echo -n Hello {untrustworthy_user}")?;  // "echo -n Hello; reboot";
+///         rashf!("echo -n Hello {untrustworthy_user}")?; // "echo -n Hello; reboot";
 ///     Ok(())
 /// }
 /// ```
 ///
 /// Of course, best practices such as proper escaping, validating user input and so on would have circumvented
-/// the above vulnerability. But, as a general rule only use formatted `rash!` commands in situations
+/// the above vulnerability. But, as a general rule only use formatted `rashf!` commands in situations
 /// where you know for certain you can trust the inputs.
 ///
-#[macro_export]
-macro_rules! rash {
-    ($arg:expr) => {
-        $crate::shell::__command($arg)
-    };
-}
-
+#[cfg(unix)]
 #[macro_export]
 macro_rules! rashf {
     ($($arg:tt)*) => {
