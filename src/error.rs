@@ -59,12 +59,16 @@ impl From<ProcessError> for RashError {
             ProcessError::CouldNotCreatePipe => into_kernel_error(v.to_string()),
             ProcessError::CouldNotDupFd(_) => into_kernel_error(v.to_string()),
             ProcessError::OpenDidNotCloseNormally => into_kernel_error(v.to_string()),
-            ProcessError::CouldNotGetStderr => RashError::FailedToReadStderr {
-                message: v.to_string(),
-            },
-            ProcessError::CouldNotGetStdout => RashError::FailedToReadStdout {
-                message: v.to_string(),
-            },
+            ProcessError::CouldNotGetStderr | ProcessError::StderrReadPrematurely => {
+                RashError::FailedToReadStderr {
+                    message: v.to_string(),
+                }
+            }
+            ProcessError::CouldNotGetStdout | ProcessError::StdoutReadPrematurely => {
+                RashError::FailedToReadStdout {
+                    message: v.to_string(),
+                }
+            }
         }
     }
 }

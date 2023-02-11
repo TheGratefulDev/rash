@@ -10,9 +10,9 @@ pub fn __command<S: AsRef<str>>(c: S) -> Result<Out, RashError> {
     let mut process = Process::new();
     Ok(unsafe {
         process.open(command)?;
+        let ret = process.close()?;
         let stdout = process.stdout()?;
         let stderr = process.stderr()?;
-        let ret = process.close()?;
         (ret, stdout, stderr)
     })
 }

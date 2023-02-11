@@ -14,8 +14,9 @@ lazy_static! {
 pub(crate) struct Process {
     fds: [c_int; 3],
     pid: c_int,
-    has_read_stdout: bool,
-    has_read_stderr: bool,
+    stdout: String,
+    stderr: String,
+    closed: bool,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -32,6 +33,10 @@ pub(crate) enum ProcessError {
     CouldNotGetStderr,
     #[error("Couldn't get stdout.")]
     CouldNotGetStdout,
+    #[error("Tried to read stdout before the process closed.")]
+    StdoutReadPrematurely,
+    #[error("Tried to read stderr before the process closed.")]
+    StderrReadPrematurely,
 }
 
 impl Process {
@@ -39,8 +44,9 @@ impl Process {
         Self {
             fds: [-1, -1, -1],
             pid: -1,
-            has_read_stdout: false,
-            has_read_stderr: false,
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+            closed: false,
         }
     }
 
@@ -108,30 +114,42 @@ impl Process {
         }
     }
 
-    pub(crate) unsafe fn close(&self) -> Result<c_int, ProcessError> {
+    pub(crate) unsafe fn close(&mut self) -> Result<c_int, ProcessError> {
         close(self.fds[0]);
-        if !self.has_read_stdout {
-            close(self.fds[1]);
-        }
-        if !self.has_read_stderr {
-            close(self.fds[2]);
-        }
+        let stdout = Self::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout);
+        let stderr = Self::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr);
+        self.closed = true;
+
         let mut exit_status = -1;
         waitpid(self.pid, &mut exit_status, 0);
         return match WIFEXITED(exit_status) {
-            true => Ok(WEXITSTATUS(exit_status)),
+            true => {
+                if stdout.is_err() {
+                    return Err(stdout.unwrap_err());
+                }
+                self.stdout = stdout.unwrap();
+                if stderr.is_err() {
+                    return Err(stderr.unwrap_err());
+                }
+                self.stderr = stderr.unwrap();
+                Ok(WEXITSTATUS(exit_status))
+            }
             false => Err(ProcessError::OpenDidNotCloseNormally),
         };
     }
 
-    pub(crate) unsafe fn stdout(&mut self) -> Result<String, ProcessError> {
-        self.has_read_stdout = true;
-        Self::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout)
+    pub(crate) fn stdout(&self) -> Result<String, ProcessError> {
+        if !self.closed {
+            return Err(ProcessError::StdoutReadPrematurely);
+        }
+        Ok(self.stdout.clone())
     }
 
-    pub(crate) unsafe fn stderr(&mut self) -> Result<String, ProcessError> {
-        self.has_read_stderr = true;
-        Self::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr)
+    pub(crate) fn stderr(&self) -> Result<String, ProcessError> {
+        if !self.closed {
+            return Err(ProcessError::StderrReadPrematurely);
+        }
+        Ok(self.stderr.clone())
     }
 
     unsafe fn read_from_fd(fd: c_int) -> anyhow::Result<String> {
@@ -165,7 +183,7 @@ impl Process {
 
 #[cfg(test)]
 mod tests {
-    use super::{BashCommand, Process};
+    use super::{BashCommand, Process, ProcessError};
 
     #[test]
     fn test_process_with_no_output() -> anyhow::Result<()> {
@@ -173,9 +191,9 @@ mod tests {
         let command = BashCommand::new("exit 23")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 23);
             assert_eq!(process.stdout()?, "".to_string());
             assert_eq!(process.stderr()?, "".to_string());
-            assert_eq!(process.close()?, 23);
         })
     }
 
@@ -185,9 +203,9 @@ mod tests {
         let command = BashCommand::new("echo -n hi")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
             assert_eq!(process.stdout()?, "hi".to_string());
             assert_eq!(process.stderr()?, "".to_string());
-            assert_eq!(process.close()?, 0);
         })
     }
 
@@ -197,9 +215,9 @@ mod tests {
         let command = BashCommand::new("echo -n hi >&2")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
             assert_eq!(process.stdout()?, "".to_string());
             assert_eq!(process.stderr()?, "hi".to_string());
-            assert_eq!(process.close()?, 0);
         })
     }
 
@@ -209,9 +227,9 @@ mod tests {
         let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
             assert_eq!(process.stdout()?, "hi".to_string());
             assert_eq!(process.stderr()?, "bye".to_string());
-            assert_eq!(process.close()?, 0);
         })
     }
 
@@ -221,8 +239,8 @@ mod tests {
         let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
-            assert_eq!(process.stdout()?, "hi".to_string());
             assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, "hi".to_string());
         })
     }
 
@@ -232,7 +250,17 @@ mod tests {
         let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
             assert_eq!(process.stderr()?, "bye".to_string());
+        })
+    }
+
+    #[test]
+    fn test_process_dont_read_either_stdout_or_stderr() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
             assert_eq!(process.close()?, 0);
         })
     }
@@ -243,9 +271,9 @@ mod tests {
         let command = BashCommand::new("echo -n hi; exit 4;")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 4);
             assert_eq!(process.stdout()?, "hi".to_string());
             assert_eq!(process.stderr()?, "".to_string());
-            assert_eq!(process.close()?, 4);
         })
     }
 
@@ -256,9 +284,21 @@ mod tests {
             BashCommand::new("/usr/bin/env bash -c 'echo -n hi; echo -n bye >&2 && exit 55;'")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 55);
             assert_eq!(process.stdout()?, "hi".to_string());
             assert_eq!(process.stderr()?, "bye".to_string());
-            assert_eq!(process.close()?, 55);
+        })
+    }
+
+    #[test]
+    fn test_process_with_premature_read() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("echo -n hi")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.stdout(), Err(ProcessError::StdoutReadPrematurely {}));
+            assert_eq!(process.stderr(), Err(ProcessError::StderrReadPrematurely {}));
+            assert_eq!(process.close()?, 0);
         })
     }
 }
