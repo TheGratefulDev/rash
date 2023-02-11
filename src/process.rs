@@ -14,6 +14,8 @@ lazy_static! {
 pub(crate) struct Process {
     fds: [c_int; 3],
     pid: c_int,
+    has_read_stdout: bool,
+    has_read_stderr: bool,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -37,6 +39,8 @@ impl Process {
         Self {
             fds: [-1, -1, -1],
             pid: -1,
+            has_read_stdout: false,
+            has_read_stderr: false,
         }
     }
 
@@ -105,10 +109,14 @@ impl Process {
     }
 
     pub(crate) unsafe fn close(&self) -> Result<c_int, ProcessError> {
-        let mut exit_status = -1;
         close(self.fds[0]);
-        close(self.fds[1]);
-        close(self.fds[2]);
+        if !self.has_read_stdout {
+            close(self.fds[1]);
+        }
+        if !self.has_read_stderr {
+            close(self.fds[2]);
+        }
+        let mut exit_status = -1;
         waitpid(self.pid, &mut exit_status, 0);
         return match WIFEXITED(exit_status) {
             true => Ok(WEXITSTATUS(exit_status)),
@@ -116,11 +124,13 @@ impl Process {
         };
     }
 
-    pub(crate) unsafe fn stdout(&self) -> Result<String, ProcessError> {
+    pub(crate) unsafe fn stdout(&mut self) -> Result<String, ProcessError> {
+        self.has_read_stdout = true;
         Self::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout)
     }
 
-    pub(crate) unsafe fn stderr(&self) -> Result<String, ProcessError> {
+    pub(crate) unsafe fn stderr(&mut self) -> Result<String, ProcessError> {
+        self.has_read_stderr = true;
         Self::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr)
     }
 
@@ -200,6 +210,28 @@ mod tests {
         Ok(unsafe {
             assert!(process.open(command).is_ok());
             assert_eq!(process.stdout()?, "hi".to_string());
+            assert_eq!(process.stderr()?, "bye".to_string());
+            assert_eq!(process.close()?, 0);
+        })
+    }
+
+    #[test]
+    fn test_process_only_read_stdout() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.stdout()?, "hi".to_string());
+            assert_eq!(process.close()?, 0);
+        })
+    }
+
+    #[test]
+    fn test_process_only_read_stderr() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("echo -n hi && echo -n bye >&2")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
             assert_eq!(process.stderr()?, "bye".to_string());
             assert_eq!(process.close()?, 0);
         })
