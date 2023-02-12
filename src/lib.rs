@@ -137,7 +137,7 @@ pub mod shell;
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn wrong_type() -> Result<(), RashError> {
-///     let (ret_val, stdout, stderr) = rash!(35345)?;          // the trait `AsRef<str>` is not implemented for `{integer}`
+///     let (ret_val, stdout, stderr) = rash!(35345)?;          // "the trait `AsRef<str>` is not implemented for `{integer}`"
 ///     Ok(())
 /// }
 /// ```
@@ -223,7 +223,7 @@ macro_rules! rash {
 /// use rsbash::{rash, RashError};
 ///
 /// pub fn wrong_type() -> Result<(), RashError> {
-///     let (ret_val, stdout, stderr) = rash!(35345)?; // format argument must be a string literal
+///     let (ret_val, stdout, stderr) = rash!(35345)?; // "format argument must be a string literal"
 ///     Ok(())
 /// }
 /// ```

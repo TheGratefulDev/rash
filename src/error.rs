@@ -55,10 +55,10 @@ impl From<ProcessError> for RashError {
             }
         }
         match v {
-            ProcessError::CouldNotFork => into_kernel_error(v.to_string()),
-            ProcessError::CouldNotCreatePipe => into_kernel_error(v.to_string()),
-            ProcessError::CouldNotDupFd(_) => into_kernel_error(v.to_string()),
-            ProcessError::OpenDidNotCloseNormally => into_kernel_error(v.to_string()),
+            ProcessError::CouldNotFork
+            | ProcessError::CouldNotCreatePipe
+            | ProcessError::CouldNotDupFd(_)
+            | ProcessError::OpenDidNotCloseNormally => into_kernel_error(v.to_string()),
             ProcessError::CouldNotGetStderr | ProcessError::StderrReadPrematurely => {
                 RashError::FailedToReadStderr {
                     message: v.to_string(),
