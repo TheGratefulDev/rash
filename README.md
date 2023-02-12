@@ -12,7 +12,7 @@
 
 **rsbash** - run bash commands from rust.
 
-Our macro **rash!** allows you to call out to a bash shell, just as you would typically from a terminal. Since this is accomplished by interacting with libc, **rash!** can only be used on unix-like platforms (Linux, macOS etc).
+Our macros **rash!** and **rashf!** allow you to call out to a bash shell, just as you would typically from a terminal. Since this is accomplished by interacting with libc, these macros can only be used on unix-like platforms (Linux, macOS etc).
 
 ### Documentation
 
