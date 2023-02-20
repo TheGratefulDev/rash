@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_rash_with_multiline_bash_command() -> anyhow::Result<()> {
         let mut process = Process::new();
-        let command = BashCommand::new(format!("bash -c {MULTILINE}"))?;
+        let command = BashCommand::new(format!("bash -c '{MULTILINE}'"))?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
             assert_eq!(process.close()?, 2);
