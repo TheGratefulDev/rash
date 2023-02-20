@@ -291,6 +291,42 @@ mod tests {
     }
 
     #[test]
+    fn test_rash_with_multiline_command() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new(MULTILINE)?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 2);
+            assert_eq!(process.stdout()?, "hibye".to_string());
+            assert_eq!(process.stderr()?, "".to_string());
+        })
+    }
+
+    #[test]
+    fn test_rash_with_multiline_bash_command() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new(format!("bash -c {MULTILINE}"))?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 2);
+            assert_eq!(process.stdout()?, "hibye".to_string());
+            assert_eq!(process.stderr()?, "".to_string());
+        })
+    }
+
+    #[test]
+    fn test_rash_with_long_running_command() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("echo -n hi; sleep 2; echo -n bye >&2")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, "hi".to_string());
+            assert_eq!(process.stderr()?, "bye".to_string());
+        })
+    }
+
+    #[test]
     fn test_process_with_premature_read() -> anyhow::Result<()> {
         let mut process = Process::new();
         let command = BashCommand::new("echo -n hi")?;
@@ -301,4 +337,10 @@ mod tests {
             assert_eq!(process.close()?, 0);
         })
     }
+
+    const MULTILINE: &'static str = r#"
+            echo -n hi && \
+            echo -n bye && \
+            exit 2
+            "#;
 }

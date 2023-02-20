@@ -7,9 +7,9 @@ pub(crate) struct BashCommand {
 
 impl BashCommand {
     pub fn new<S: AsRef<str>>(s: S) -> Result<Self, NulError> {
-        let quoted = BashCommand::quote(s.as_ref());
+        let quoted = Self::quote(s.as_ref());
         Ok(Self {
-            command: CString::new(BashCommand::format(quoted))?,
+            command: CString::new(Self::format(quoted))?,
         })
     }
 
