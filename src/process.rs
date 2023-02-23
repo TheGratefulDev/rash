@@ -1,4 +1,4 @@
-use std::{ffi::CString, fs::File, io::Read, os::fd::FromRawFd};
+use std::{ffi::CString, fs::File, io::Read, os::unix::io::FromRawFd};
 
 use libc::{_exit, c_char, c_int, close, dup, execl, fork, pipe, waitpid, WEXITSTATUS, WIFEXITED};
 use thiserror::Error;
