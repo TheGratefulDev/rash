@@ -2,7 +2,7 @@
 
 # rsbash
 
-![GitHub issues](https://img.shields.io/github/issues/ljelliot/rash)
+![GitHub issues](https://img.shields.io/github/issues/TheGratefulDev/rash)
 ![Cargo Downloads](https://img.shields.io/crates/d/rsbash)
 ![Cargo Latest version](https://img.shields.io/crates/v/rsbash)
 
