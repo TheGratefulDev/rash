@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rash_with_multiline_command() -> anyhow::Result<()> {
+    fn test_process_with_multiline_command() -> anyhow::Result<()> {
         let mut process = Process::new();
         let command = BashCommand::new(MULTILINE)?;
         Ok(unsafe {
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rash_with_multiline_bash_command() -> anyhow::Result<()> {
+    fn test_process_with_multiline_bash_command() -> anyhow::Result<()> {
         let mut process = Process::new();
         let command = BashCommand::new(format!("bash -c '{MULTILINE}'"))?;
         Ok(unsafe {
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rash_with_long_running_command() -> anyhow::Result<()> {
+    fn test_process_with_long_running_command() -> anyhow::Result<()> {
         let mut process = Process::new();
         let command = BashCommand::new("echo -n hi; sleep 2; echo -n bye >&2")?;
         Ok(unsafe {
