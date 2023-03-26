@@ -18,15 +18,64 @@ lazy_static! {
     static ref COMMAND: CString = CString::new("-c").expect("-c CString failed.");
 }
 
+struct Reader {
+    contents: String,
+    handle: Option<JoinHandle<String>>,
+    pair: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl Reader {
+    pub(crate) fn new() -> Self {
+        Self {
+            contents: String::default(),
+            handle: None,
+            pair: Arc::new((Mutex::new(false), Condvar::new())),
+        }
+    }
+
+    pub(crate) unsafe fn read(&mut self, fd: c_int) -> () {
+        let pair = self.pair.clone();
+        let mut file = File::from_raw_fd(fd);
+        self.handle = Some(std::thread::spawn(move || {
+            let mut contents = String::default();
+            let &(ref lock, ref cvar) = &*pair;
+            loop {
+                file.read_to_string(&mut contents).unwrap(); // TODO: handle this error
+                let mut stop = lock.lock().unwrap();
+                let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
+                stop = result.0;
+                if *stop == true {
+                    break;
+                }
+            }
+            contents
+        }));
+    }
+
+    pub(crate) fn stop(&mut self) -> () {
+        let &(ref lock, ref cvar) = &*self.pair;
+        {
+            let mut stop = lock.lock().unwrap();
+            *stop = true;
+        }
+        cvar.notify_one();
+    }
+
+    pub(crate) fn join(&mut self) -> std::thread::Result<()> {
+        // TODO - premature join error + thread error.
+        Ok(self.contents = self.handle.take().unwrap().join()?)
+    }
+
+    pub(crate) fn contents(&self) -> String {
+        self.contents.clone()
+    }
+}
+
 pub(crate) struct Process {
     fds: [c_int; 3],
     pid: c_int,
-    stdout: String,
-    stderr: String,
-    stdout_handle: Option<JoinHandle<String>>,
-    stderr_handle: Option<JoinHandle<String>>,
-    stdout_pair: Arc<(Mutex<bool>, Condvar)>,
-    stderr_pair: Arc<(Mutex<bool>, Condvar)>,
+    stdout: Reader,
+    stderr: Reader,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -50,12 +99,8 @@ impl Process {
         Self {
             fds: [-1, -1, -1],
             pid: -1,
-            stdout: String::default(),
-            stderr: String::default(),
-            stdout_handle: None,
-            stderr_handle: None,
-            stdout_pair: Arc::new((Mutex::new(false), Condvar::new())),
-            stderr_pair: Arc::new((Mutex::new(false), Condvar::new())),
+            stdout: Reader::new(),
+            stderr: Reader::new(),
         }
     }
 
@@ -118,40 +163,8 @@ impl Process {
                 self.fds[1] = out_fds[0];
                 self.fds[2] = err_fds[0];
                 self.pid = pid;
-
-                let mut stdout_file = File::from_raw_fd(self.fds[1]);
-                let stdout_pair = self.stdout_pair.clone();
-                self.stdout_handle = Some(std::thread::spawn(move || {
-                    let mut stdout = String::default();
-                    let &(ref lock, ref cvar) = &*stdout_pair;
-                    loop {
-                        stdout_file.read_to_string(&mut stdout).unwrap();
-                        let mut stop = lock.lock().unwrap();
-                        let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
-                        stop = result.0;
-                        if *stop == true {
-                            break;
-                        }
-                    }
-                    stdout
-                }));
-
-                let mut stderr_file = File::from_raw_fd(self.fds[2]);
-                let stderr_pair = self.stderr_pair.clone();
-                self.stderr_handle = Some(std::thread::spawn(move || {
-                    let mut stderr = String::default();
-                    let &(ref lock, ref cvar) = &*stderr_pair;
-                    loop {
-                        stderr_file.read_to_string(&mut stderr).unwrap();
-                        let mut stop = lock.lock().unwrap();
-                        let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
-                        stop = result.0;
-                        if *stop == true {
-                            break;
-                        }
-                    }
-                    stderr
-                }));
+                self.stdout.read(self.fds[1]);
+                self.stderr.read(self.fds[2]);
                 Ok(())
             }
         }
@@ -161,46 +174,30 @@ impl Process {
         close(self.fds[0]);
         let mut status = -1;
         waitpid(self.pid, &mut status, 0);
-
-        let &(ref lock, ref cvar) = &*self.stdout_pair;
-        {
-            let mut stop = lock.lock().unwrap();
-            *stop = true;
-            cvar.notify_one();
-        }
-
-        let &(ref elock, ref ecvar) = &*self.stderr_pair;
-        {
-            let mut estop = elock.lock().unwrap();
-            *estop = true;
-            ecvar.notify_one();
-        }
-
-        self.stdout = self
-            .stdout_handle
-            .take()
-            .unwrap()
-            .join()
-            .map_err(|_| ProcessError::CouldNotGetStdout)?;
-        self.stderr = self
-            .stderr_handle
-            .take()
-            .unwrap()
-            .join()
-            .map_err(|_| ProcessError::CouldNotGetStderr)?;
-
+        self.stdout.stop();
+        self.stderr.stop();
+        let stdout_result = self.stdout.join().map_err(|_| ProcessError::CouldNotGetStdout);
+        let stderr_result = self.stderr.join().map_err(|_| ProcessError::CouldNotGetStderr);
         return match WIFEXITED(status) {
-            true => Ok(WEXITSTATUS(status)),
+            true => {
+                if stdout_result.is_err() {
+                    return Err(stdout_result.unwrap_err());
+                }
+                if stderr_result.is_err() {
+                    return Err(stderr_result.unwrap_err());
+                }
+                Ok(WEXITSTATUS(status))
+            }
             false => Err(ProcessError::OpenDidNotCloseNormally),
         };
     }
 
     pub(crate) fn stdout(&self) -> Result<String, ProcessError> {
-        Ok(self.stdout.clone())
+        Ok(self.stdout.contents())
     }
 
     pub(crate) fn stderr(&self) -> Result<String, ProcessError> {
-        Ok(self.stderr.clone())
+        Ok(self.stderr.contents())
     }
 
     unsafe fn dup(&self, fd: c_int) -> Result<(), ProcessError> {
