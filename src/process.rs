@@ -28,7 +28,7 @@ struct Reader {
 pub(crate) enum ReaderError {
     #[error("Couldn't read - {0}")]
     CouldNotRead(String),
-    #[error("Couldn't read.")]
+    #[error("Reader::join called before read.")]
     PrematureJoin,
     #[error("Thread error - {0}")]
     ThreadError(String),
