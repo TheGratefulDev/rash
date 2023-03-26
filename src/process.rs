@@ -1,6 +1,13 @@
-use std::{ffi::CString, fs::File, io::Read, os::unix::io::FromRawFd};
-
 use libc::{_exit, c_char, c_int, close, dup, execl, fork, pipe, waitpid, WEXITSTATUS, WIFEXITED};
+use std::{
+    ffi::CString,
+    fs::File,
+    io::Read,
+    os::unix::io::FromRawFd,
+    sync::{Arc, Condvar, Mutex},
+    thread::JoinHandle,
+    time::Duration,
+};
 use thiserror::Error;
 
 use crate::command::BashCommand;
@@ -16,7 +23,10 @@ pub(crate) struct Process {
     pid: c_int,
     stdout: String,
     stderr: String,
-    closed: bool,
+    stdout_handle: Option<JoinHandle<String>>,
+    stderr_handle: Option<JoinHandle<String>>,
+    stdout_pair: Arc<(Mutex<bool>, Condvar)>,
+    stderr_pair: Arc<(Mutex<bool>, Condvar)>,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -33,10 +43,6 @@ pub(crate) enum ProcessError {
     CouldNotGetStderr,
     #[error("Couldn't get stdout.")]
     CouldNotGetStdout,
-    #[error("Tried to read stdout before the process closed.")]
-    StdoutReadPrematurely,
-    #[error("Tried to read stderr before the process closed.")]
-    StderrReadPrematurely,
 }
 
 impl Process {
@@ -44,9 +50,12 @@ impl Process {
         Self {
             fds: [-1, -1, -1],
             pid: -1,
-            stdout: "".to_string(),
-            stderr: "".to_string(),
-            closed: false,
+            stdout: String::default(),
+            stderr: String::default(),
+            stdout_handle: None,
+            stderr_handle: None,
+            stdout_pair: Arc::new((Mutex::new(false), Condvar::new())),
+            stderr_pair: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 
@@ -109,6 +118,40 @@ impl Process {
                 self.fds[1] = out_fds[0];
                 self.fds[2] = err_fds[0];
                 self.pid = pid;
+
+                let mut stdout_file = File::from_raw_fd(self.fds[1]);
+                let stdout_pair = self.stdout_pair.clone();
+                self.stdout_handle = Some(std::thread::spawn(move || {
+                    let mut stdout = String::default();
+                    let &(ref lock, ref cvar) = &*stdout_pair;
+                    loop {
+                        stdout_file.read_to_string(&mut stdout).unwrap();
+                        let mut stop = lock.lock().unwrap();
+                        let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
+                        stop = result.0;
+                        if *stop == true {
+                            break;
+                        }
+                    }
+                    stdout
+                }));
+
+                let mut stderr_file = File::from_raw_fd(self.fds[2]);
+                let stderr_pair = self.stderr_pair.clone();
+                self.stderr_handle = Some(std::thread::spawn(move || {
+                    let mut stderr = String::default();
+                    let &(ref lock, ref cvar) = &*stderr_pair;
+                    loop {
+                        stderr_file.read_to_string(&mut stderr).unwrap();
+                        let mut stop = lock.lock().unwrap();
+                        let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
+                        stop = result.0;
+                        if *stop == true {
+                            break;
+                        }
+                    }
+                    stderr
+                }));
                 Ok(())
             }
         }
@@ -116,47 +159,48 @@ impl Process {
 
     pub(crate) unsafe fn close(&mut self) -> Result<c_int, ProcessError> {
         close(self.fds[0]);
-        let stdout = Self::read_from_fd(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout);
-        let stderr = Self::read_from_fd(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr);
-        self.closed = true;
+        let mut status = -1;
+        waitpid(self.pid, &mut status, 0);
 
-        let mut exit_status = -1;
-        waitpid(self.pid, &mut exit_status, 0);
-        return match WIFEXITED(exit_status) {
-            true => {
-                if stdout.is_err() {
-                    return Err(stdout.unwrap_err());
-                }
-                self.stdout = stdout.unwrap();
-                if stderr.is_err() {
-                    return Err(stderr.unwrap_err());
-                }
-                self.stderr = stderr.unwrap();
-                Ok(WEXITSTATUS(exit_status))
-            }
+        let &(ref lock, ref cvar) = &*self.stdout_pair;
+        {
+            let mut stop = lock.lock().unwrap();
+            *stop = true;
+            cvar.notify_one();
+        }
+
+        let &(ref elock, ref ecvar) = &*self.stderr_pair;
+        {
+            let mut estop = elock.lock().unwrap();
+            *estop = true;
+            ecvar.notify_one();
+        }
+
+        self.stdout = self
+            .stdout_handle
+            .take()
+            .unwrap()
+            .join()
+            .map_err(|_| ProcessError::CouldNotGetStdout)?;
+        self.stderr = self
+            .stderr_handle
+            .take()
+            .unwrap()
+            .join()
+            .map_err(|_| ProcessError::CouldNotGetStderr)?;
+
+        return match WIFEXITED(status) {
+            true => Ok(WEXITSTATUS(status)),
             false => Err(ProcessError::OpenDidNotCloseNormally),
         };
     }
 
     pub(crate) fn stdout(&self) -> Result<String, ProcessError> {
-        if !self.closed {
-            return Err(ProcessError::StdoutReadPrematurely);
-        }
         Ok(self.stdout.clone())
     }
 
     pub(crate) fn stderr(&self) -> Result<String, ProcessError> {
-        if !self.closed {
-            return Err(ProcessError::StderrReadPrematurely);
-        }
         Ok(self.stderr.clone())
-    }
-
-    unsafe fn read_from_fd(fd: c_int) -> anyhow::Result<String> {
-        let mut file = File::from_raw_fd(fd);
-        let mut buffer = String::new();
-        file.read_to_string(&mut buffer)?;
-        Ok(buffer)
     }
 
     unsafe fn dup(&self, fd: c_int) -> Result<(), ProcessError> {
@@ -327,14 +371,38 @@ mod tests {
     }
 
     #[test]
-    fn test_process_with_premature_read() -> anyhow::Result<()> {
+    fn test_process_with_stdin_larger_than_64kb() -> anyhow::Result<()> {
         let mut process = Process::new();
-        let command = BashCommand::new("echo -n hi")?;
+        let command = BashCommand::new("head -c 65537 /dev/zero | cat > /dev/null")?;
         Ok(unsafe {
             assert!(process.open(command).is_ok());
-            assert_eq!(process.stdout(), Err(ProcessError::StdoutReadPrematurely {}));
-            assert_eq!(process.stderr(), Err(ProcessError::StderrReadPrematurely {}));
             assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, "".to_string());
+            assert_eq!(process.stderr()?, "".to_string());
+        })
+    }
+
+    #[test]
+    fn test_process_with_stdout_larger_than_64kb() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("head -c 65537 /dev/zero")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?.len(), 65537);
+            assert_eq!(process.stderr()?, "".to_string());
+        })
+    }
+
+    #[test]
+    fn test_process_with_stderr_larger_than_64kb() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new("head -c 65537 /dev/zero >&2")?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, "".to_string());
+            assert_eq!(process.stderr()?.len(), 65537);
         })
     }
 
