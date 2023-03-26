@@ -24,6 +24,16 @@ struct Reader {
     pair: Arc<(Mutex<bool>, Condvar)>,
 }
 
+#[derive(Error, Debug)]
+pub(crate) enum ReaderError {
+    #[error("Couldn't read - {0}")]
+    CouldNotRead(String),
+    #[error("Couldn't read.")]
+    PrematureJoin,
+    #[error("Thread error - {0}")]
+    ThreadError(String),
+}
+
 impl Reader {
     pub(crate) fn new() -> Self {
         Self {
@@ -33,14 +43,16 @@ impl Reader {
         }
     }
 
-    pub(crate) unsafe fn read(&mut self, fd: c_int) -> () {
+    pub(crate) unsafe fn read(&mut self, fd: c_int) -> Result<(), ReaderError> {
         let pair = self.pair.clone();
         let mut file = File::from_raw_fd(fd);
         self.handle = Some(std::thread::spawn(move || {
             let mut contents = String::default();
             let &(ref lock, ref cvar) = &*pair;
             loop {
-                file.read_to_string(&mut contents).unwrap(); // TODO: handle this error
+                file.read_to_string(&mut contents)
+                    .map_err(|e| ReaderError::CouldNotRead(e.to_string()))
+                    .unwrap();
                 let mut stop = lock.lock().unwrap();
                 let result = cvar.wait_timeout(stop, Duration::from_millis(25)).unwrap();
                 stop = result.0;
@@ -50,6 +62,7 @@ impl Reader {
             }
             contents
         }));
+        Ok(())
     }
 
     pub(crate) fn stop(&mut self) -> () {
@@ -61,9 +74,13 @@ impl Reader {
         cvar.notify_one();
     }
 
-    pub(crate) fn join(&mut self) -> std::thread::Result<()> {
-        // TODO - premature join error + thread error.
-        Ok(self.contents = self.handle.take().unwrap().join()?)
+    pub(crate) fn join(&mut self) -> Result<(), ReaderError> {
+        Ok(self.contents = self
+            .handle
+            .take()
+            .ok_or(ReaderError::PrematureJoin)?
+            .join()
+            .map_err(|e| ReaderError::ThreadError(format!("{:?}", e)))?)
     }
 
     pub(crate) fn contents(&self) -> String {
@@ -163,8 +180,8 @@ impl Process {
                 self.fds[1] = out_fds[0];
                 self.fds[2] = err_fds[0];
                 self.pid = pid;
-                self.stdout.read(self.fds[1]);
-                self.stderr.read(self.fds[2]);
+                self.stdout.read(self.fds[1]).map_err(|_| ProcessError::CouldNotGetStdout)?;
+                self.stderr.read(self.fds[2]).map_err(|_| ProcessError::CouldNotGetStderr)?;
                 Ok(())
             }
         }
