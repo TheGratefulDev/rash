@@ -24,4 +24,5 @@ tempfile = "3.3.0"
 thiserror = "1.0.38"
 
 [dev-dependencies]
-rstest = "0.16.0"
+rand = "0.8.5"
+rstest = "0.17.0"

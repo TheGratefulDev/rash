@@ -241,6 +241,8 @@ impl Process {
 
 #[cfg(test)]
 mod tests {
+    use rand::distributions::{Alphanumeric, DistString};
+
     use super::{BashCommand, Process, ProcessError};
 
     #[test]
@@ -385,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn test_process_with_stdin_larger_than_64kb() -> anyhow::Result<()> {
+    fn test_process_with_piped_stdin_larger_than_64kb() -> anyhow::Result<()> {
         let mut process = Process::new();
         let command = BashCommand::new("head -c 65537 /dev/zero | cat > /dev/null")?;
         Ok(unsafe {
@@ -417,6 +419,32 @@ mod tests {
             assert_eq!(process.close()?, 0);
             assert_eq!(process.stdout()?, "".to_string());
             assert_eq!(process.stderr()?.len(), 65537);
+        })
+    }
+
+    #[test]
+    fn test_process_with_large_random_stdout() -> anyhow::Result<()> {
+        let s = Alphanumeric.sample_string(&mut rand::thread_rng(), 102400);
+        let mut process = Process::new();
+        let command = BashCommand::new(format!("echo -n '{str}'", str = s.clone()))?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, s);
+            assert_eq!(process.stderr()?, String::default());
+        })
+    }
+
+    #[test]
+    fn test_process_with_large_random_stderr() -> anyhow::Result<()> {
+        let s = Alphanumeric.sample_string(&mut rand::thread_rng(), 102400);
+        let mut process = Process::new();
+        let command = BashCommand::new(format!("echo -n '{str}' >&2", str = s.clone()))?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?, String::default());
+            assert_eq!(process.stderr()?, s);
         })
     }
 
