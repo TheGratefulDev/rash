@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "rsbash"
-version = "2.0.2"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "lazy_static",
