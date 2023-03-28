@@ -243,7 +243,7 @@ impl Process {
 mod tests {
     use rand::distributions::{Alphanumeric, DistString};
 
-    use super::{BashCommand, Process, ProcessError};
+    use super::{BashCommand, Process};
 
     #[test]
     fn test_process_with_no_output() -> anyhow::Result<()> {
@@ -448,9 +448,37 @@ mod tests {
         })
     }
 
+    #[test]
+    fn test_process_with_background_jobs() -> anyhow::Result<()> {
+        let mut process = Process::new();
+        let command = BashCommand::new(BACKGROUND)?;
+        Ok(unsafe {
+            assert!(process.open(command).is_ok());
+            assert_eq!(process.close()?, 0);
+            assert_eq!(process.stdout()?.len(), 100000);
+            assert_eq!(process.stderr()?.len(), 100000);
+        })
+    }
+
+    const BACKGROUND: &'static str = r#"
+         #!/usr/bin/env bash
+        set -euf -o pipefail
+                
+        sleep infinity &
+        pid1=$!
+        
+        sleep infinity &
+        pid2=$!
+        
+        head -c 100000 /dev/zero
+        head -c 100000 /dev/zero >&2
+        
+        kill "$pid1" "$pid2"
+    "#;
+
     const MULTILINE: &'static str = r#"
-            echo -n hi && \
-            echo -n bye && \
-            exit 2
-            "#;
+        echo -n hi && \
+        echo -n bye && \
+        exit 2
+    "#;
 }
